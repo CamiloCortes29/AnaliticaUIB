@@ -57,7 +57,7 @@ def procesar_balance(filepath):
         col_ref_cc_id = "Area 2"
         col_ref_cc_nombre = "Area Informe"
         if col_ref_cc_id in df_ccosto.columns and col_ref_cc_nombre in df_ccosto.columns:
-            df_ccosto[col_ref_cc_id] = df_ccosto[col_ref_cc_id].astype(str)
+            df_ccosto[col_ref_cc_id] = df_ccosto[col_ref_cc_id].astype(str).str.strip()
             mapeo_ccosto = df_ccosto.set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
             print("Columna 'Area_Informe' creada.")
@@ -82,10 +82,11 @@ def procesar_balance(filepath):
                 df_td = df_td[df_td["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn.upper()]
 
             if not df_td.empty:
+                # Incluimos Area_2 en el índice para facilitar el cruce con Catalina Valencia (que usa números)
                 pivot_table = pd.pivot_table(
                     df_td,
                     values=col_saldo,
-                    index=["Area_Informe"],
+                    index=["Area_2", "Area_Informe"],
                     columns=["Mes Contabilización"],
                     aggfunc="sum",
                     fill_value=0
@@ -104,27 +105,43 @@ def procesar_balance(filepath):
                 '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
                 '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
             }
+            # Flatten the multi-index pivot table
             pivot_data = pivot_table.reset_index()
-            cols_meses_pivot = [c for c in pivot_data.columns if c != "Area_Informe"]
+            cols_meses_pivot = [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]
 
-            header_row = df_catalina.iloc[16] # Línea 17
-            col_area_idx = header_row[header_row == "Area"].index[0]
+            # Buscar el encabezado "Area" en la línea 17 (índice 16)
+            # El usuario dice: "columna A linea 17 veras el titulo Area"
+            row_header_idx = 16
+            col_area_idx = 0 # Columna A
+
+            header_row = df_catalina.iloc[row_header_idx]
 
             for col_mes_p in cols_meses_pivot:
                 mes_num = col_mes_p.split('-')[1]
                 nombre_mes_target = meses_map.get(mes_num)
 
+                # Buscar en qué columna de Catalina está el mes (Ene, Feb, etc.)
+                col_mes_idx = None
                 if nombre_mes_target in header_row.values:
                     col_mes_idx = header_row[header_row == nombre_mes_target].index[0]
-                    for i in range(17, 29): # Línea 18 a 29
-                        if i >= len(df_catalina): break
-                        area_val = df_catalina.iloc[i, col_area_idx]
-                        if pd.isna(area_val): continue
 
-                        match = pivot_data[pivot_data["Area_Informe"].astype(str).str.strip() == str(area_val).strip()]
+                if col_mes_idx is not None:
+                    # De la línea 18 a la 29 (índice 17 a 28)
+                    for i in range(17, 29):
+                        if i >= len(df_catalina): break
+
+                        # Tomar el valor del área de la columna A (índice 0)
+                        area_num_val = str(df_catalina.iloc[i, col_area_idx]).strip()
+                        if not area_num_val or area_num_val == "nan": continue
+
+                        # Buscar en pivot_data por Area_2 (que es el número)
+                        match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
+
                         if not match.empty:
-                            df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0]
-            print("Hoja 'Catalina Valencia' actualizada.")
+                            monto = match[col_mes_p].values[0]
+                            df_catalina.iloc[i, col_mes_idx] = monto
+
+            print("Hoja 'Catalina Valencia' actualizada usando números de área en columna A.")
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
@@ -145,7 +162,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v7.xlsx"
+        ruta_archivo = "Balance_Prueba_v8.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

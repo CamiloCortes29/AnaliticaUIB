@@ -40,7 +40,6 @@ def procesar_balance(filepath):
         print("Columna 'inf. londres' creada.")
 
     # --- PARTE 2: Cálculos y Áreas ---
-    # A. Saldo Final (Moneda Local)
     col_debito = "Débito Moneda Local"
     col_credito = "Crédito Moneda Local"
     col_saldo = "Saldo Final (Moneda Local)"
@@ -50,11 +49,9 @@ def procesar_balance(filepath):
                                   pd.to_numeric(df_principal[col_credito], errors='coerce').fillna(0)
         print(f"Columna '{col_saldo}' calculada.")
 
-    # B. Area_2 y Area_Informe
     col_area = "AREA"
     if col_area in df_principal.columns:
         df_principal["Area_2"] = df_principal[col_area].astype(str).str[:2]
-        print("Columna 'Area_2' creada.")
 
     if df_ccosto is not None:
         col_ref_cc_id = "Area 2"
@@ -65,10 +62,9 @@ def procesar_balance(filepath):
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
             print("Columna 'Area_Informe' creada.")
 
-    # --- PARTE 3: Tabla Dinámica (TD Estrategias) con Filtros ---
+    # --- PARTE 3: Tabla Dinámica (TD Estrategias) ---
     pivot_table = None
     try:
-        # Normalizar fecha
         posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
         col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
 
@@ -76,29 +72,16 @@ def procesar_balance(filepath):
             df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], errors='coerce')
             df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
 
-            # Aplicar filtros solicitados para la TD
-            # Inf. Londres : COMMISSION PAID
-            # Nombre SN : ESTRATEGIAS REA S.A.S.
-
             filtro_londres = "COMMISSION PAID"
             filtro_sn = "ESTRATEGIAS REA S.A.S."
 
-            col_inf_londres = "inf. londres"
-            col_nombre_sn = "Nombre SN"
-
-            # Realizar una copia filtrada para la TD
             df_td = df_principal.copy()
-
-            if col_inf_londres in df_td.columns:
-                df_td = df_td[df_td[col_inf_londres].astype(str).str.strip().str.upper() == filtro_londres.upper()]
-
-            if col_nombre_sn in df_td.columns:
-                df_td = df_td[df_td[col_nombre_sn].astype(str).str.strip().str.upper() == filtro_sn.upper()]
-
-            print(f"Filtros aplicados para TD: '{filtro_londres}' y '{filtro_sn}'. Filas resultantes: {len(df_td)}")
+            if "inf. londres" in df_td.columns:
+                df_td = df_td[df_td["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres.upper()]
+            if "Nombre SN" in df_td.columns:
+                df_td = df_td[df_td["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn.upper()]
 
             if not df_td.empty:
-                # Crear la tabla dinámica
                 pivot_table = pd.pivot_table(
                     df_td,
                     values=col_saldo,
@@ -108,21 +91,52 @@ def procesar_balance(filepath):
                     fill_value=0
                 )
                 print("Tabla dinámica 'TD Estrategias' generada.")
-            else:
-                print("Advertencia: No hay datos que coincidan con los filtros para la tabla dinámica.")
-        else:
-            print("Error: No se encontró la columna de fecha.")
-
     except Exception as e:
         print(f"Error al generar la tabla dinámica: {e}")
 
-    # 4. Guardar en el mismo archivo
+    # --- PARTE 4: Actualizar Hoja "Catalina Valencia" ---
+    df_catalina = None
+    try:
+        df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
+        if pivot_table is not None:
+            meses_map = {
+                '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr',
+                '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+                '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
+            }
+            pivot_data = pivot_table.reset_index()
+            cols_meses_pivot = [c for c in pivot_data.columns if c != "Area_Informe"]
+
+            header_row = df_catalina.iloc[16] # Línea 17
+            col_area_idx = header_row[header_row == "Area"].index[0]
+
+            for col_mes_p in cols_meses_pivot:
+                mes_num = col_mes_p.split('-')[1]
+                nombre_mes_target = meses_map.get(mes_num)
+
+                if nombre_mes_target in header_row.values:
+                    col_mes_idx = header_row[header_row == nombre_mes_target].index[0]
+                    for i in range(17, 29): # Línea 18 a 29
+                        if i >= len(df_catalina): break
+                        area_val = df_catalina.iloc[i, col_area_idx]
+                        if pd.isna(area_val): continue
+
+                        match = pivot_data[pivot_data["Area_Informe"].astype(str).str.strip() == str(area_val).strip()]
+                        if not match.empty:
+                            df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0]
+            print("Hoja 'Catalina Valencia' actualizada.")
+    except Exception as e:
+        print(f"Error al actualizar 'Catalina Valencia': {e}")
+
+    # 5. Guardar todo
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
             df_principal.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
-        print("Hojas 'Procesado' y 'TD Estrategias' guardadas exitosamente.")
+            if df_catalina is not None:
+                df_catalina.to_excel(writer, sheet_name="Catalina Valencia", index=False, header=False)
+        print("Cambios guardados exitosamente.")
     except Exception as e:
         print(f"Error al guardar el archivo: {e}")
 
@@ -130,9 +144,8 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v6.xlsx"
+        ruta_archivo = "Balance_Prueba_v7.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

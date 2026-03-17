@@ -82,7 +82,6 @@ def procesar_balance(filepath):
                 df_td = df_td[df_td["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn.upper()]
 
             if not df_td.empty:
-                # Incluimos Area_2 en el índice para facilitar el cruce con Catalina Valencia (que usa números)
                 pivot_table = pd.pivot_table(
                     df_td,
                     values=col_saldo,
@@ -95,7 +94,7 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al generar la tabla dinámica: {e}")
 
-    # --- PARTE 4: Actualizar Hoja "Catalina Valencia" ---
+    # --- PARTE 4 & 5: Actualizar Hoja "Catalina Valencia" ---
     df_catalina = None
     try:
         df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
@@ -105,53 +104,69 @@ def procesar_balance(filepath):
                 '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
                 '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
             }
-            # Flatten the multi-index pivot table
             pivot_data = pivot_table.reset_index()
             cols_meses_pivot = [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]
 
-            # Buscar el encabezado "Area" en la línea 17 (índice 16)
-            # El usuario dice: "columna A linea 17 veras el titulo Area"
             row_header_idx = 16
             col_area_idx = 0 # Columna A
-
             header_row = df_catalina.iloc[row_header_idx]
 
             for col_mes_p in cols_meses_pivot:
                 mes_num = col_mes_p.split('-')[1]
                 nombre_mes_target = meses_map.get(mes_num)
-
-                # Buscar en qué columna de Catalina está el mes (Ene, Feb, etc.)
-                col_mes_idx = None
-                if nombre_mes_target in header_row.values:
-                    col_mes_idx = header_row[header_row == nombre_mes_target].index[0]
+                col_mes_idx = header_row[header_row == nombre_mes_target].index[0] if nombre_mes_target in header_row.values else None
 
                 if col_mes_idx is not None:
-                    # De la línea 18 a la 29 (índice 17 a 28)
+                    # 4. Poblar valores de áreas (Línea 18-29)
                     for i in range(17, 29):
                         if i >= len(df_catalina): break
-
-                        # Tomar el valor del área de la columna A (índice 0)
                         area_num_val = str(df_catalina.iloc[i, col_area_idx]).strip()
                         if not area_num_val or area_num_val == "nan": continue
 
-                        # Buscar en pivot_data por Area_2 (que es el número)
                         match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
-
                         if not match.empty:
-                            monto = match[col_mes_p].values[0]
-                            df_catalina.iloc[i, col_mes_idx] = monto
+                            df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0]
+                        else:
+                            df_catalina.iloc[i, col_mes_idx] = 0
 
-            print("Hoja 'Catalina Valencia' actualizada usando números de área en columna A.")
+                    # 5. Totales (Línea 30 - Índice 29)
+                    # Sumar las líneas 18 a 29
+                    total_col = pd.to_numeric(df_catalina.iloc[17:29, col_mes_idx], errors='coerce').fillna(0).sum()
+                    df_catalina.iloc[29, col_mes_idx] = total_col
+                    df_catalina.iloc[29, col_area_idx] = "Total"
+
+                    # 6. Porcentajes (Desde Línea 35 - Índice 34)
+                    # La idea es buscar el área en las líneas 35+ y calcular su % respecto al total de la línea 30
+                    for j in range(34, len(df_catalina)):
+                        area_perc_val = str(df_catalina.iloc[j, col_area_idx]).strip()
+                        if not area_perc_val or area_perc_val == "nan" or area_perc_val == "Total": continue
+
+                        # Buscar el valor de esta área en la sección de arriba (líneas 18-29)
+                        area_upper_row = None
+                        for r_search in range(17, 29):
+                            if str(df_catalina.iloc[r_search, col_area_idx]).strip() == area_perc_val:
+                                area_upper_row = r_search
+                                break
+
+                        if area_upper_row is not None:
+                            val_area = df_catalina.iloc[area_upper_row, col_mes_idx]
+                            if total_col != 0:
+                                df_catalina.iloc[j, col_mes_idx] = (val_area / total_col)
+                            else:
+                                df_catalina.iloc[j, col_mes_idx] = 0
+
+            print("Hoja 'Catalina Valencia' actualizada con Totales y Porcentajes.")
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # 5. Guardar todo
+    # 7. Guardar todo
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
             df_principal.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
             if df_catalina is not None:
+                # Guardar sin headers para mantener formato original
                 df_catalina.to_excel(writer, sheet_name="Catalina Valencia", index=False, header=False)
         print("Cambios guardados exitosamente.")
     except Exception as e:
@@ -162,7 +177,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v8.xlsx"
+        ruta_archivo = "Balance_Prueba_v9.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

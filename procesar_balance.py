@@ -88,19 +88,12 @@ def procesar_balance(filepath):
         if "Nombre SN" in df_principal.columns:
             df_cat = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_nombre_catalina.upper()].copy()
             if not df_cat.empty:
-                # Duplicar y cruzar valores de débito/crédito
                 df_cat_inv = df_cat.copy()
                 col_deb = "Débito Moneda Local"
                 col_cre = "Crédito Moneda Local"
-
-                # Intercambiar valores
                 df_cat_inv[col_deb], df_cat_inv[col_cre] = df_cat[col_cre], df_cat[col_deb]
-
-                # Recalcular saldo para la copia invertida si es necesario (opcional, según la lógica requerida)
                 if col_saldo in df_cat_inv.columns:
                     df_cat_inv[col_saldo] = df_cat_inv[col_deb] - df_cat_inv[col_cre]
-
-                # Concatenar
                 df_proceso_catalina = pd.concat([df_cat, df_cat_inv], ignore_index=True)
                 print(f"Hoja 'Proceso_Catalina' generada con {len(df_proceso_catalina)} filas.")
     except Exception as e:
@@ -110,60 +103,74 @@ def procesar_balance(filepath):
     df_catalina = None
     try:
         df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
+        num_rows_cat = len(df_catalina)
+
         if pivot_table is not None:
             meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
                          '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'}
             pivot_data = pivot_table.reset_index()
             cols_meses_pivot = [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]
-            header_row = df_catalina.iloc[16]
-            col_area_idx = 0
 
-            for col_mes_p in cols_meses_pivot:
-                mes_num = col_mes_p.split('-')[1]
-                nombre_mes_target = meses_map.get(mes_num)
-                col_mes_idx = header_row[header_row == nombre_mes_target].index[0] if nombre_mes_target in header_row.values else None
+            if num_rows_cat > 16:
+                header_row = df_catalina.iloc[16]
+                col_area_idx = 0
 
-                if col_mes_idx is not None:
-                    # 4. Valores (18-29)
-                    for i in range(17, 29):
-                        area_num_val = str(df_catalina.iloc[i, col_area_idx]).strip()
-                        if not area_num_val or area_num_val == "nan": continue
-                        match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
-                        df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0] if not match.empty else 0
-                    # 5. Total (30) y Porcentajes (35-47)
-                    total_col = pd.to_numeric(df_catalina.iloc[17:29, col_mes_idx], errors='coerce').fillna(0).sum()
-                    df_catalina.iloc[29, col_mes_idx] = total_col
-                    for j in range(34, 47):
-                        area_perc_val = str(df_catalina.iloc[j, col_area_idx]).strip()
-                        if not area_perc_val or area_perc_val == "nan": continue
-                        val_area = 0
-                        for r_search in range(17, 29):
-                            if str(df_catalina.iloc[r_search, col_area_idx]).strip() == area_perc_val:
-                                val_area = df_catalina.iloc[r_search, col_mes_idx]
-                                break
-                        df_catalina.iloc[j, col_mes_idx] = (val_area / total_col) if total_col != 0 else 0
-                    # 6. Distribución Valor Base (53-65)
-                    val_base_linea_3 = pd.to_numeric(df_catalina.iloc[2, col_mes_idx], errors='coerce') or 0
-                    for k in range(52, 65):
-                        area_dist_val = str(df_catalina.iloc[k, col_area_idx]).strip()
-                        if not area_dist_val or area_dist_val == "nan": continue
-                        perc_area = 0
-                        for r_perc in range(34, 47):
-                            if str(df_catalina.iloc[r_perc, col_area_idx]).strip() == area_dist_val:
-                                perc_area = df_catalina.iloc[r_perc, col_mes_idx]
-                                break
-                        df_catalina.iloc[k, col_mes_idx] = perc_area * val_base_linea_3
-                    # 7. Distribución Suma Rango (69-81)
-                    suma_rango_4_13 = pd.to_numeric(df_catalina.iloc[3:13, col_mes_idx], errors='coerce').fillna(0).sum()
-                    for l in range(68, 81):
-                        area_range_val = str(df_catalina.iloc[l, col_area_idx]).strip()
-                        if not area_range_val or area_range_val == "nan": continue
-                        perc_area_r = 0
-                        for r_perc_r in range(34, 47):
-                            if str(df_catalina.iloc[r_perc_r, col_area_idx]).strip() == area_range_val:
-                                perc_area_r = df_catalina.iloc[r_perc_r, col_mes_idx]
-                                break
-                        df_catalina.iloc[l, col_mes_idx] = perc_area_r * suma_rango_4_13
+                for col_mes_p in cols_meses_pivot:
+                    mes_num = col_mes_p.split('-')[1]
+                    nombre_mes_target = meses_map.get(mes_num)
+                    col_mes_idx = header_row[header_row == nombre_mes_target].index[0] if nombre_mes_target in header_row.values else None
+
+                    if col_mes_idx is not None:
+                        # 4. Valores (18-29)
+                        for i in range(17, 29):
+                            if i >= num_rows_cat: break
+                            area_num_val = str(df_catalina.iloc[i, col_area_idx]).strip()
+                            if not area_num_val or area_num_val == "nan": continue
+                            match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
+                            df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0] if not match.empty else 0
+
+                        # 5. Total (30) y Porcentajes (35-47)
+                        if 29 < num_rows_cat:
+                            total_col = pd.to_numeric(df_catalina.iloc[17:min(29, num_rows_cat), col_mes_idx], errors='coerce').fillna(0).sum()
+                            df_catalina.iloc[29, col_mes_idx] = total_col
+                            for j in range(34, 47):
+                                if j >= num_rows_cat: break
+                                area_perc_val = str(df_catalina.iloc[j, col_area_idx]).strip()
+                                if not area_perc_val or area_perc_val == "nan": continue
+                                val_area = 0
+                                for r_search in range(17, min(29, num_rows_cat)):
+                                    if str(df_catalina.iloc[r_search, col_area_idx]).strip() == area_perc_val:
+                                        val_area = df_catalina.iloc[r_search, col_mes_idx]
+                                        break
+                                df_catalina.iloc[j, col_mes_idx] = (val_area / total_col) if total_col != 0 else 0
+
+                        # 6. Distribución Valor Base (53-65)
+                        if 2 < num_rows_cat:
+                            val_base_linea_3 = pd.to_numeric(df_catalina.iloc[2, col_mes_idx], errors='coerce') or 0
+                            for k in range(52, 65):
+                                if k >= num_rows_cat: break
+                                area_dist_val = str(df_catalina.iloc[k, col_area_idx]).strip()
+                                if not area_dist_val or area_dist_val == "nan": continue
+                                perc_area = 0
+                                for r_perc in range(34, min(47, num_rows_cat)):
+                                    if str(df_catalina.iloc[r_perc, col_area_idx]).strip() == area_dist_val:
+                                        perc_area = df_catalina.iloc[r_perc, col_mes_idx]
+                                        break
+                                df_catalina.iloc[k, col_mes_idx] = perc_area * val_base_linea_3
+
+                        # 7. Distribución Suma Rango (69-81)
+                        if num_rows_cat > 12:
+                            suma_rango_4_13 = pd.to_numeric(df_catalina.iloc[3:min(13, num_rows_cat), col_mes_idx], errors='coerce').fillna(0).sum()
+                            for l in range(68, 81):
+                                if l >= num_rows_cat: break
+                                area_range_val = str(df_catalina.iloc[l, col_area_idx]).strip()
+                                if not area_range_val or area_range_val == "nan": continue
+                                perc_area_r = 0
+                                for r_perc_r in range(34, min(47, num_rows_cat)):
+                                    if str(df_catalina.iloc[r_perc_r, col_area_idx]).strip() == area_range_val:
+                                        perc_area_r = df_catalina.iloc[r_perc_r, col_mes_idx]
+                                        break
+                                df_catalina.iloc[l, col_mes_idx] = perc_area_r * suma_rango_4_13
             print("Hoja 'Catalina Valencia' actualizada con distribuciones.")
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
@@ -187,7 +194,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v11.xlsx"
+        ruta_archivo = "Balance_Prueba_v12.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

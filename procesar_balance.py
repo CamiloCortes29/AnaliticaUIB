@@ -6,6 +6,7 @@ def procesar_balance(filepath):
 
     # 1. Leer hojas necesarias
     try:
+        # Usar engine='openpyxl' para mejorar compatibilidad si es necesario
         df_principal = pd.read_excel(filepath, sheet_name="PG")
     except Exception as e:
         print(f"Error al leer 'PG': {e}")
@@ -48,7 +49,8 @@ def procesar_balance(filepath):
     col_saldo = "Saldo Final (Moneda Local)"
 
     if col_debito in df_principal.columns and col_credito in df_principal.columns:
-        df_principal[col_saldo] = df_principal[col_debito] - df_principal[col_credito]
+        df_principal[col_saldo] = pd.to_numeric(df_principal[col_debito], errors='coerce').fillna(0) - \
+                                  pd.to_numeric(df_principal[col_credito], errors='coerce').fillna(0)
         print(f"Columna '{col_saldo}' calculada.")
 
     # B. Area_2 y Area_Informe
@@ -67,48 +69,57 @@ def procesar_balance(filepath):
             print("Columna 'Area_Informe' creada.")
 
     # --- PARTE 3: Tabla Dinámica (TD Estrategias) ---
-    # Columnas requeridas: Area_Informe (filas), Fecha Contabilizacion (columnas),
-    # Saldo Final (Moneda Local) (valores)
-    # Filtros sugeridos (Inf. Londres, Nombre SN) - nota: pandas pivot tables
-    # no tienen filtros nativos de Excel UI pero se pueden agrupar por ellos.
-
+    pivot_table = None
     try:
-        # Asegurar que la fecha esté en formato adecuado
-        col_fecha = "Fecha Contabilizacion"
-        if col_fecha in df_principal.columns:
-            df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], dayfirst=True, errors='coerce')
+        # Normalizar nombres de columnas de fecha (puede variar el acento)
+        posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
+        col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
 
-        # Crear la tabla dinámica
-        # Nota: Los filtros "Inf. Londres" y "Nombre SN" son informativos en este contexto
-        # a menos que el usuario pida filtrado previo o inclusión en el pivot.
-        # Por ahora se genera el resumen por Area e Informe.
-        pivot_table = pd.pivot_table(
-            df_principal,
-            values=col_saldo,
-            index=["Area_Informe"],
-            columns=[col_fecha],
-            aggfunc="sum",
-            fill_value=0
-        )
-        print("Tabla dinámica 'TD Estrategias' generada.")
+        if col_fecha:
+            # Convertir a datetime y extraer solo la fecha (sin hora) o el Mes
+            # El usuario mencionó: 31/01/2026 12:00:00 a. m.
+            df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], errors='coerce')
+
+            # Crear columna Mes Contabilización para simplificar la TD
+            df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
+            print("Columna 'Mes Contabilización' creada.")
+
+            # Crear la tabla dinámica usando el Mes
+            pivot_table = pd.pivot_table(
+                df_principal,
+                values=col_saldo,
+                index=["Area_Informe"],
+                columns=["Mes Contabilización"],
+                aggfunc="sum",
+                fill_value=0
+            )
+            print("Tabla dinámica 'TD Estrategias' generada.")
+        else:
+            print("Error: No se encontró la columna de fecha.")
+
     except Exception as e:
         print(f"Error al generar la tabla dinámica: {e}")
-        pivot_table = None
 
     # 4. Guardar en el mismo archivo
-    with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-        df_principal.to_excel(writer, sheet_name="Procesado", index=False)
-        if pivot_table is not None:
-            pivot_table.to_excel(writer, sheet_name="TD Estrategias")
+    try:
+        # Usar engine 'openpyxl' explícitamente
+        with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+            # Guardar la hoja principal procesada
+            df_principal.to_excel(writer, sheet_name="Procesado", index=False)
+            # Guardar la tabla dinámica si existe
+            if pivot_table is not None:
+                pivot_table.to_excel(writer, sheet_name="TD Estrategias")
+        print("Hojas 'Procesado' y 'TD Estrategias' guardadas exitosamente.")
+    except Exception as e:
+        print(f"Error al guardar el archivo: {e}")
 
-    print("Hojas 'Procesado' y 'TD Estrategias' guardadas exitosamente.")
     return df_principal
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
 
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v4.xlsx"
+        ruta_archivo = "Balance_Prueba_v5.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

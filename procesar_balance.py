@@ -153,77 +153,73 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # --- PARTE 8 & 9: Proceso Catalina Valencia y Distribución Explosiva ---
+    # --- PARTE 8 & 9: Proceso Catalina Valencia y Distribución Explosiva Condicionada ---
     df_proceso_catalina = None
     try:
         filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
-            # 1. Filtrar registros de Catalina
             df_cat_source = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_nombre_catalina.upper()].copy()
 
             if not df_cat_source.empty:
                 col_deb = "Débito Moneda Local"
                 col_cre = "Crédito Moneda Local"
-
-                # Obtener áreas de distribución de Catalina Valencia (Líneas 53-64)
                 header_row_cat = df_catalina.iloc[16]
-                areas_dist_info = []
-                for idx_row in range(52, 65): # Líneas 53-64
-                    if idx_row >= len(df_catalina): break
-                    area_n = str(df_catalina.iloc[idx_row, 0]).strip()
-                    if not area_n or area_n == "nan": continue
 
-                    dist_meses = {}
-                    for col_m in meses_map.values():
-                        if col_m in header_row_cat.values:
-                            idx_col_m = header_row_cat[header_row_cat == col_m].index[0]
-                            dist_meses[col_m] = df_catalina.iloc[idx_row, idx_col_m]
-                    areas_dist_info.append({"area": area_n, "dist": dist_meses})
+                # Función auxiliar para obtener info de distribución por rango
+                def get_areas_dist_range(range_rows):
+                    info = []
+                    for idx_row in range_rows:
+                        if idx_row >= len(df_catalina): break
+                        area_n = str(df_catalina.iloc[idx_row, 0]).strip()
+                        if not area_n or area_n == "nan": continue
+                        dist_meses = {}
+                        for col_m in meses_map.values():
+                            if col_m in header_row_cat.values:
+                                idx_col_m = header_row_cat[header_row_cat == col_m].index[0]
+                                dist_meses[col_m] = df_catalina.iloc[idx_row, idx_col_m]
+                        info.append({"area": area_n, "dist": dist_meses})
+                    return info
+
+                # Cargar ambos rangos de Catalina Valencia
+                # SALARIES: Líneas 53-68 (Índices 52-67)
+                dist_info_salaries = get_areas_dist_range(range(52, 68))
+                # OTHER STAFF COSTS: Líneas 69-80 (Índices 68-79)
+                dist_info_other = get_areas_dist_range(range(68, 80))
 
                 final_proceso_rows = []
-
                 for _, row in df_cat_source.iterrows():
-                    # Para cada registro original
                     val_deb = row[col_deb]
                     val_cre = row[col_cre]
-
                     mes_fila = row["Mes Contabilización"] if "Mes Contabilización" in row else None
-                    mes_esp_f = None
-                    if mes_fila:
-                        mes_num_f = mes_fila.split('-')[1]
-                        mes_esp_f = meses_map.get(mes_num_f)
+                    mes_esp_f = meses_map.get(mes_fila.split('-')[1]) if mes_fila else None
 
-                    if val_deb > 0:
-                        # PARTE 9: Explosión del Débito
-                        for area_item in areas_dist_info:
+                    # Determinar el conjunto de distribución según 'inf. londres'
+                    inf_londre_val = str(row["inf. londres"]).strip().upper() if "inf. londres" in row else ""
+
+                    if "SALARIES" in inf_londre_val:
+                        target_dist_info = dist_info_salaries
+                    elif "OTHER STAFF COSTS" in inf_londre_val:
+                        target_dist_info = dist_info_other
+                    else:
+                        target_dist_info = [] # No coincide, no explotamos?
+
+                    if val_deb > 0 and target_dist_info:
+                        for area_item in target_dist_info:
                             new_row_deb = row.copy()
                             new_row_deb["AREA"] = area_item["area"]
-                            # Reemplazar débito por el valor de distribución del mes
                             monto_dist = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
                             new_row_deb[col_deb] = monto_dist
-                            new_row_deb[col_cre] = 0 # Asegurar crédito en 0 para explosión débito
+                            new_row_deb[col_cre] = 0
                             final_proceso_rows.append(new_row_deb)
 
                     if val_cre > 0:
-                        # PARTE 8: Duplicar e invertir (pero el usuario pide que se haga para CADA línea)
-                        # "por cada linea que se trajo de la hoja Procesado debemos hacer ... duplicarla"
-                        # En el paso anterior (Parte 8) pedía duplicar e invertir.
-                        # Ahora el paso 9 pide explotar los DÉBITOS.
-
-                        # Primero: La original (con su crédito)
-                        row_orig = row.copy()
-                        final_proceso_rows.append(row_orig)
-
-                        # Segundo: La invertida (crédito pasa a débito)
+                        # La original (con su crédito)
+                        final_proceso_rows.append(row.copy())
+                        # La invertida (crédito pasa a débito) explotada
                         row_inv = row.copy()
                         row_inv[col_deb], row_inv[col_cre] = row[col_cre], row[col_deb]
-                        # Como este nuevo débito > 0, lo explotamos igual?
-                        # Re-leyendo: "debemos tomar cada linea que tiene el valor en 'Débito Moneda Local' duplicarla"
-                        # Si invertimos el crédito, se vuelve débito.
-
-                        val_deb_inv = row_inv[col_deb]
-                        if val_deb_inv > 0:
-                            for area_item in areas_dist_info:
+                        if row_inv[col_deb] > 0 and target_dist_info:
+                            for area_item in target_dist_info:
                                 new_row_deb_inv = row_inv.copy()
                                 new_row_deb_inv["AREA"] = area_item["area"]
                                 monto_dist_inv = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
@@ -232,9 +228,9 @@ def procesar_balance(filepath):
                                 final_proceso_rows.append(new_row_deb_inv)
 
                 df_proceso_catalina = pd.DataFrame(final_proceso_rows)
-                print(f"Hoja 'Proceso_Catalina' generada con {len(df_proceso_catalina)} filas (Explosión y Distribución).")
+                print(f"Hoja 'Proceso_Catalina' generada con filtros condicionales: {len(df_proceso_catalina)} filas.")
     except Exception as e:
-        print(f"Error al generar 'Proceso_Catalina' (Parte 9): {e}")
+        print(f"Error al generar 'Proceso_Catalina' (Parte 9 Condicionada): {e}")
 
     # Guardar todo
     try:
@@ -255,7 +251,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v13.xlsx"
+        ruta_archivo = "Balance_Prueba_v14.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

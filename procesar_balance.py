@@ -6,7 +6,6 @@ def procesar_balance(filepath):
 
     # 1. Leer hojas necesarias
     try:
-        # Usar engine='openpyxl' para mejorar compatibilidad si es necesario
         df_principal = pd.read_excel(filepath, sheet_name="PG")
     except Exception as e:
         print(f"Error al leer 'PG': {e}")
@@ -25,12 +24,10 @@ def procesar_balance(filepath):
         df_ccosto = None
 
     # --- PARTE 1: Filtrado y VLOOKUP Inicial ---
-    col_filtro = "Tipo Origen (Documento)"
-    if col_filtro in df_principal.columns:
-        df_principal = df_principal.dropna(subset=[col_filtro]).copy()
-        print(f"Filas filtradas por '{col_filtro}'.")
-    else:
-        print(f"Advertencia: No se encontró la columna '{col_filtro}'.")
+    col_filtro_origen = "Tipo Origen (Documento)"
+    if col_filtro_origen in df_principal.columns:
+        df_principal = df_principal.dropna(subset=[col_filtro_origen]).copy()
+        print(f"Filas filtradas por '{col_filtro_origen}'.")
 
     # Mapeo para "inf. londres"
     col_busqueda_ref = "CUENTA"
@@ -68,32 +65,51 @@ def procesar_balance(filepath):
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
             print("Columna 'Area_Informe' creada.")
 
-    # --- PARTE 3: Tabla Dinámica (TD Estrategias) ---
+    # --- PARTE 3: Tabla Dinámica (TD Estrategias) con Filtros ---
     pivot_table = None
     try:
-        # Normalizar nombres de columnas de fecha (puede variar el acento)
+        # Normalizar fecha
         posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
         col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
 
         if col_fecha:
-            # Convertir a datetime y extraer solo la fecha (sin hora) o el Mes
-            # El usuario mencionó: 31/01/2026 12:00:00 a. m.
             df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], errors='coerce')
-
-            # Crear columna Mes Contabilización para simplificar la TD
             df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
-            print("Columna 'Mes Contabilización' creada.")
 
-            # Crear la tabla dinámica usando el Mes
-            pivot_table = pd.pivot_table(
-                df_principal,
-                values=col_saldo,
-                index=["Area_Informe"],
-                columns=["Mes Contabilización"],
-                aggfunc="sum",
-                fill_value=0
-            )
-            print("Tabla dinámica 'TD Estrategias' generada.")
+            # Aplicar filtros solicitados para la TD
+            # Inf. Londres : COMMISSION PAID
+            # Nombre SN : ESTRATEGIAS REA S.A.S.
+
+            filtro_londres = "COMMISSION PAID"
+            filtro_sn = "ESTRATEGIAS REA S.A.S."
+
+            col_inf_londres = "inf. londres"
+            col_nombre_sn = "Nombre SN"
+
+            # Realizar una copia filtrada para la TD
+            df_td = df_principal.copy()
+
+            if col_inf_londres in df_td.columns:
+                df_td = df_td[df_td[col_inf_londres].astype(str).str.strip().str.upper() == filtro_londres.upper()]
+
+            if col_nombre_sn in df_td.columns:
+                df_td = df_td[df_td[col_nombre_sn].astype(str).str.strip().str.upper() == filtro_sn.upper()]
+
+            print(f"Filtros aplicados para TD: '{filtro_londres}' y '{filtro_sn}'. Filas resultantes: {len(df_td)}")
+
+            if not df_td.empty:
+                # Crear la tabla dinámica
+                pivot_table = pd.pivot_table(
+                    df_td,
+                    values=col_saldo,
+                    index=["Area_Informe"],
+                    columns=["Mes Contabilización"],
+                    aggfunc="sum",
+                    fill_value=0
+                )
+                print("Tabla dinámica 'TD Estrategias' generada.")
+            else:
+                print("Advertencia: No hay datos que coincidan con los filtros para la tabla dinámica.")
         else:
             print("Error: No se encontró la columna de fecha.")
 
@@ -102,11 +118,8 @@ def procesar_balance(filepath):
 
     # 4. Guardar en el mismo archivo
     try:
-        # Usar engine 'openpyxl' explícitamente
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-            # Guardar la hoja principal procesada
             df_principal.to_excel(writer, sheet_name="Procesado", index=False)
-            # Guardar la tabla dinámica si existe
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
         print("Hojas 'Procesado' y 'TD Estrategias' guardadas exitosamente.")
@@ -119,7 +132,7 @@ if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
 
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v5.xlsx"
+        ruta_archivo = "Balance_Prueba_v6.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

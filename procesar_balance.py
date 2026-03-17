@@ -58,6 +58,8 @@ def procesar_balance(filepath):
 
     # --- PARTE 3: Tabla Dinámica (TD Estrategias) ---
     pivot_table = None
+    meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
+                 '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'}
     try:
         posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
         col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
@@ -83,8 +85,6 @@ def procesar_balance(filepath):
 
     # --- PARTES 4-7: Actualizar Hoja "Catalina Valencia" ---
     df_catalina = None
-    meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
-                 '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'}
     try:
         df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
         num_rows_cat = len(df_catalina)
@@ -153,15 +153,13 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # --- PARTE 8, 9 & CONSOLIDACIÓN: Reversión y Explosión ---
+    # --- PARTE 8, 9 & CONSOLIDACIÓN FINAL: Reversión y Explosión Refinada ---
     try:
         filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
             df_cat_source = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_nombre_catalina.upper()].copy()
 
             if not df_cat_source.empty:
-                col_deb = "Débito Moneda Local"
-                col_cre = "Crédito Moneda Local"
                 header_row_cat = df_catalina.iloc[16]
 
                 def get_areas_dist_range(range_rows):
@@ -188,38 +186,50 @@ def procesar_balance(filepath):
                     inf_londre_val = str(row["inf. londres"]).strip().upper() if "inf. londres" in row else ""
                     target_dist_info = dist_info_salaries if "SALARIES" in inf_londre_val else dist_info_other if "OTHER STAFF COSTS" in inf_londre_val else []
 
-                    # 1. REVERSIÓN (Anular original): Débito pasa a Crédito, Crédito pasa a Débito
+                    # A. Registro de Reversión (Anular original)
                     row_reversion = row.copy()
-                    row_reversion[col_deb], row_reversion[col_cre] = row[col_cre], row[col_deb]
+                    row_reversion[col_debito], row_reversion[col_credito] = row[col_credito], row[col_debito]
+                    # Calcular Saldo Final para la reversión
+                    row_reversion[col_saldo] = row_reversion[col_debito] - row_reversion[col_credito]
                     nuevos_registros.append(row_reversion)
 
-                    # 2. EXPLOSIÓN (Distribuir): Si el original era Débito, creamos múltiples Débitos por área
-                    if row[col_deb] > 0 and target_dist_info:
+                    # B. Registro de Explosión (Distribución)
+                    # Si el original era Débito, creamos múltiples Débitos por área
+                    if row[col_debito] > 0 and target_dist_info:
                         for area_item in target_dist_info:
                             new_row_dist = row.copy()
                             new_row_dist["AREA"] = area_item["area"]
                             monto_dist = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
-                            new_row_dist[col_deb] = monto_dist
-                            new_row_dist[col_cre] = 0
+                            new_row_dist[col_debito] = monto_dist
+                            new_row_dist[col_credito] = 0
+                            # Calcular Saldo Final para la distribución
+                            new_row_dist[col_saldo] = new_row_dist[col_debito] - new_row_dist[col_credito]
                             nuevos_registros.append(new_row_dist)
-
-                    # Si el original era Crédito, ¿se explota?
-                    # El usuario pidió: "tomar cada linea que tiene el valor en Débito Moneda Local duplicarla"
-                    # Por lo tanto, créditos originales solo se revierten (y ya están incluidos en el paso 1).
 
                 if nuevos_registros:
                     df_append = pd.DataFrame(nuevos_registros)
+                    # Eliminar columnas con nombres de meses (Ene, Feb, etc.) antes de anexar
+                    cols_to_drop = [m for m in meses_map.values() if m in df_append.columns]
+                    if cols_to_drop:
+                        df_append = df_append.drop(columns=cols_to_drop)
+
                     df_principal = pd.concat([df_principal, df_append], ignore_index=True)
-                    print(f"Consolidación exitosa: {len(df_append)} nuevos registros añadidos a Procesado.")
+                    print(f"Consolidación exitosa en Procesado: {len(df_append)} registros añadidos.")
 
     except Exception as e:
-        print(f"Error en consolidación final: {e}")
+        print(f"Error en consolidación refinada: {e}")
 
     # Guardar todo
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-            # Mantener 'Mes Contabilización' ya que fue solicitado previamente para agrupamiento/legibilidad
-            df_principal.to_excel(writer, sheet_name="Procesado", index=False)
+            # Eliminar columnas auxiliares antes de guardar Procesado
+            cols_finales_drop = ["Mes Contabilización"] + list(meses_map.values())
+            df_final_procesado = df_principal.copy()
+            for c in cols_finales_drop:
+                if c in df_final_procesado.columns:
+                    df_final_procesado = df_final_procesado.drop(columns=[c])
+
+            df_final_procesado.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
             if df_catalina is not None:
@@ -233,7 +243,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v16.xlsx"
+        ruta_archivo = "Balance_Prueba_v17.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

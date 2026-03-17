@@ -153,8 +153,7 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # --- PARTE 8 & 9: Proceso Catalina Valencia y Distribución Explosiva Condicionada ---
-    df_proceso_catalina = None
+    # --- PARTE 8, 9 & CONSOLIDACIÓN: Reversión y Explosión ---
     try:
         filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
@@ -165,7 +164,6 @@ def procesar_balance(filepath):
                 col_cre = "Crédito Moneda Local"
                 header_row_cat = df_catalina.iloc[16]
 
-                # Función auxiliar para obtener info de distribución por rango
                 def get_areas_dist_range(range_rows):
                     info = []
                     for idx_row in range_rows:
@@ -180,69 +178,53 @@ def procesar_balance(filepath):
                         info.append({"area": area_n, "dist": dist_meses})
                     return info
 
-                # Cargar ambos rangos de Catalina Valencia
-                # SALARIES: Líneas 53-68 (Índices 52-67)
                 dist_info_salaries = get_areas_dist_range(range(52, 68))
-                # OTHER STAFF COSTS: Líneas 69-80 (Índices 68-79)
                 dist_info_other = get_areas_dist_range(range(68, 80))
 
-                final_proceso_rows = []
+                nuevos_registros = []
                 for _, row in df_cat_source.iterrows():
-                    val_deb = row[col_deb]
-                    val_cre = row[col_cre]
                     mes_fila = row["Mes Contabilización"] if "Mes Contabilización" in row else None
                     mes_esp_f = meses_map.get(mes_fila.split('-')[1]) if mes_fila else None
-
-                    # Determinar el conjunto de distribución según 'inf. londres'
                     inf_londre_val = str(row["inf. londres"]).strip().upper() if "inf. londres" in row else ""
+                    target_dist_info = dist_info_salaries if "SALARIES" in inf_londre_val else dist_info_other if "OTHER STAFF COSTS" in inf_londre_val else []
 
-                    if "SALARIES" in inf_londre_val:
-                        target_dist_info = dist_info_salaries
-                    elif "OTHER STAFF COSTS" in inf_londre_val:
-                        target_dist_info = dist_info_other
-                    else:
-                        target_dist_info = [] # No coincide, no explotamos?
+                    # 1. REVERSIÓN (Anular original): Débito pasa a Crédito, Crédito pasa a Débito
+                    row_reversion = row.copy()
+                    row_reversion[col_deb], row_reversion[col_cre] = row[col_cre], row[col_deb]
+                    nuevos_registros.append(row_reversion)
 
-                    if val_deb > 0 and target_dist_info:
+                    # 2. EXPLOSIÓN (Distribuir): Si el original era Débito, creamos múltiples Débitos por área
+                    if row[col_deb] > 0 and target_dist_info:
                         for area_item in target_dist_info:
-                            new_row_deb = row.copy()
-                            new_row_deb["AREA"] = area_item["area"]
+                            new_row_dist = row.copy()
+                            new_row_dist["AREA"] = area_item["area"]
                             monto_dist = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
-                            new_row_deb[col_deb] = monto_dist
-                            new_row_deb[col_cre] = 0
-                            final_proceso_rows.append(new_row_deb)
+                            new_row_dist[col_deb] = monto_dist
+                            new_row_dist[col_cre] = 0
+                            nuevos_registros.append(new_row_dist)
 
-                    if val_cre > 0:
-                        # La original (con su crédito)
-                        final_proceso_rows.append(row.copy())
-                        # La invertida (crédito pasa a débito) explotada
-                        row_inv = row.copy()
-                        row_inv[col_deb], row_inv[col_cre] = row[col_cre], row[col_deb]
-                        if row_inv[col_deb] > 0 and target_dist_info:
-                            for area_item in target_dist_info:
-                                new_row_deb_inv = row_inv.copy()
-                                new_row_deb_inv["AREA"] = area_item["area"]
-                                monto_dist_inv = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
-                                new_row_deb_inv[col_deb] = monto_dist_inv
-                                new_row_deb_inv[col_cre] = 0
-                                final_proceso_rows.append(new_row_deb_inv)
+                    # Si el original era Crédito, ¿se explota?
+                    # El usuario pidió: "tomar cada linea que tiene el valor en Débito Moneda Local duplicarla"
+                    # Por lo tanto, créditos originales solo se revierten (y ya están incluidos en el paso 1).
 
-                df_proceso_catalina = pd.DataFrame(final_proceso_rows)
-                print(f"Hoja 'Proceso_Catalina' generada con filtros condicionales: {len(df_proceso_catalina)} filas.")
+                if nuevos_registros:
+                    df_append = pd.DataFrame(nuevos_registros)
+                    df_principal = pd.concat([df_principal, df_append], ignore_index=True)
+                    print(f"Consolidación exitosa: {len(df_append)} nuevos registros añadidos a Procesado.")
+
     except Exception as e:
-        print(f"Error al generar 'Proceso_Catalina' (Parte 9 Condicionada): {e}")
+        print(f"Error en consolidación final: {e}")
 
     # Guardar todo
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+            # Mantener 'Mes Contabilización' ya que fue solicitado previamente para agrupamiento/legibilidad
             df_principal.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
-            if df_proceso_catalina is not None:
-                df_proceso_catalina.to_excel(writer, sheet_name="Proceso_Catalina", index=False)
             if df_catalina is not None:
                 df_catalina.to_excel(writer, sheet_name="Catalina Valencia", index=False, header=False)
-        print("Cambios guardados exitosamente.")
+        print("Cambios guardados exitosamente en el archivo Excel.")
     except Exception as e:
         print(f"Error al guardar el archivo: {e}")
 
@@ -251,7 +233,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v14.xlsx"
+        ruta_archivo = "Balance_Prueba_v16.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

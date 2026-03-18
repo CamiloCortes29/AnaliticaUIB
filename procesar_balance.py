@@ -171,7 +171,7 @@ def procesar_balance(filepath):
                 d_sal = get_dist(range(52, 68)); d_oth = get_dist(range(68, 80))
                 for _, row in df_cat_source.iterrows():
                     mes_esp_f = meses_map.get(row["Mes Contabilización"].split('-')[1]) if "Mes Contabilización" in row else None
-                    inf_l = str(row["inf. londres"]).strip().upper()
+                    inf_l = str(row["inf. londre"]).strip().upper()
                     t_dist = d_sal if "SALARIES" in inf_l else d_oth if "OTHER STAFF COSTS" in inf_l else []
                     v_d = pd.to_numeric(row[col_debito], errors='coerce') or 0; v_c = pd.to_numeric(row[col_credito], errors='coerce') or 0
                     r_rev = row.copy(); r_rev[col_debito], r_rev[col_credito] = v_c, v_d; r_rev[col_saldo] = r_rev[col_debito] - r_rev[col_credito]
@@ -185,10 +185,10 @@ def procesar_balance(filepath):
                             nuevos_registros.append(n_r)
             # 2. Ajuste Brokerage S
             df_seg_source = df_principal[(df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.") &
-                                         (df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID")].copy()
+                                         (df_principal["inf. londre"].astype(str).str.strip().str.upper() == "COMMISSION PAID")].copy()
             for _, row in df_seg_source.iterrows():
                 r_b = row.copy(); r_b[col_credito] = pd.to_numeric(row[col_debito], errors='coerce') or 0; r_b[col_debito] = 0
-                r_b["inf. londres"] = "BROKERAGE S"; r_b[col_saldo] = r_b[col_debito] - r_b[col_credito]; nuevos_registros.append(r_b)
+                r_b["inf. londre"] = "BROKERAGE S"; r_b[col_saldo] = r_b[col_debito] - r_b[col_credito]; nuevos_registros.append(r_b)
 
         if nuevos_registros:
             df_principal = pd.concat([df_principal, pd.DataFrame(nuevos_registros)], ignore_index=True)
@@ -200,7 +200,7 @@ def procesar_balance(filepath):
     try:
         if "Nombre proyecto" in df_principal.columns and "Area_Informe" in df_principal.columns:
             df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
-            mask_medellin = (df_principal["Nombre proyecto"].astype(str).str.strip().str.upper() == "MEDELLIN") & (df_principal["Area_Informe"].astype(str) == "100")
+            mask_medellin = (df_principal["Nombre proyecto"].astype(str).str.strip().str.upper() == "MEDELLIN") & (df_principal["Area_Informe"].astype(str).isin(["100", "10"]))
             df_principal.loc[mask_medellin, "Area_Informe"] = "70"
     except Exception as e:
         print(f"Error en ajuste Medellín: {e}")
@@ -209,11 +209,11 @@ def procesar_balance(filepath):
     pivots_finales = {}
     try:
         df_principal["Area_Informe"] = df_principal["Area_Informe"].replace("nan", "Desconocido")
-        df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
+        df_est_f = df_principal[(df_principal["inf. londre"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-        df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
+        df_seg_f = df_principal[(df_principal["inf. londre"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
         if not df_seg_f.empty: pivots_finales["TD SEGUROS"] = pd.pivot_table(df_seg_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-        pivot_mov_orig = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
+        pivot_mov_orig = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londre"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
         pivot_mov_orig = pivot_mov_orig.reindex(sorted(pivot_mov_orig.columns), axis=1)
         total_mov = pivot_mov_orig.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov_orig, total_mov])
         pivots_finales["TD Movimiento 2026"] = pivot_mov
@@ -248,7 +248,7 @@ def procesar_balance(filepath):
         indices_target = ["INFORMATION TECHNOLOGY", "OCCUPANCY", "PRINTING, POSTAGE, STATIONERY, TELEPHONES"]
         df_directos = pd.DataFrame(index=indices_target, columns=cols_target)
         for concepto in indices_target:
-            val_base_100 = pivot_mov_orig.loc[concepto, "100"] if (concepto in pivot_mov_orig.index and "100" in pivot_mov_orig.columns) else 0
+            val_base_100 = pivot_mov_orig.loc[concepto, "100"] if (concepto in pivot_mov_orig.index and "100" in pivot_mov_orig.columns) else (pivot_mov_orig.loc[concepto, "10"] if (concepto in pivot_mov_orig.index and "10" in pivot_mov_orig.columns) else 0)
             for area in cols_target: df_directos.loc[concepto, area] = val_base_100 * perc_func_map.get(str(area), 0)
         hoja_mov_rows = []
         pivot_mov_sheet = pivots_finales["TD Movimiento 2026"].reset_index()
@@ -266,47 +266,64 @@ def procesar_balance(filepath):
     # --- BASE_DATA_POWERBI (TABULAR) ---
     df_powerbi = None
     try:
-        # Clasificaciones según imagen
-        ingresos = ["Brokerage", "Brokerage M", "Brokerage S", "Fees", "Commission Paid"]
-        staff_costs = ["Salaries", "Bonus", "Other Staff Costs"]
-        expenses = ["Travel & Entertaining", "Occupancy", "Printing, Postage, Stationery, Telephones", "Information Technology", "Bad Debts", "Legal & Professional", "Insurance", "Training/Seminars/Conferences", "Depreciation", "Bank Charges", "Marketing, PR & Sponsorship", "Other Direct Costs", "Intercompany"]
+        # Listas de clasificación según requerimiento (escalado / 1000)
+        lista_ingresos = ["BROKERAGE", "BROKERAGE M", "BROKERAGE S", "FEES", "COMMISSION PAID"]
+        lista_staff = ["SALARIES", "BONUS", "OTHER STAFF COSTS"]
+        lista_expenses = ["TRAVEL & ENTERTAINING", "OCCUPANCY", "PRINTING, POSTAGE, STATIONERY, TELEPHONES",
+                          "INFORMATION TECHNOLOGY", "BAD DEBTS", "LEGAL & PROFESSIONAL", "INSURANCE",
+                          "TRAINING/SEMINARS/CONFERENCES", "DEPRECIATION", "BANK CHARGES",
+                          "MARKETING, PR & SPONSORSHIP", "OTHER DIRECT COSTS", "INTERCOMPANY"]
 
         tabular_data = []
-        # Registros Directos (No Area 100)
+
+        # 1. Registros Directos (Cualquier área que NO sea 100)
         df_direct_pbi = df_principal[df_principal["Area_Informe"].astype(str) != "100"].copy()
         for _, row in df_direct_pbi.iterrows():
-            inf_l = str(row["inf. londres"]).strip()
-            seccion = "Brokerage & Fees" if any(x.upper() in inf_l.upper() for x in ingresos) else \
-                      "Direct Costs (Staff)" if any(x.upper() in inf_l.upper() for x in staff_costs) else \
-                      "Direct Costs (Expenses)"
+            inf_l = str(row["inf. londre"]).strip().upper()
+
+            # Determinar Sección
+            if any(x in inf_l for x in lista_ingresos):
+                seccion = "Brokerage & Fees"
+            elif any(x in inf_l for x in lista_staff + lista_expenses):
+                seccion = "Direct Costs"
+            else:
+                seccion = "Otros"
+
             tabular_data.append({
                 "Mes": row["Mes Contabilización"] if "Mes Contabilización" in row else None,
                 "Area": row["Area_Informe"],
                 "Seccion": seccion,
                 "Concepto": inf_l,
-                "Valor": row[col_saldo]
+                "Valor": (row[col_saldo] / 1000)
             })
 
-        # Registros Indirectos (Redistribución del Area 100)
+        # 2. Registros Indirectos (Redistribución del Area 100)
         df_indirect_pbi = df_principal[df_principal["Area_Informe"].astype(str) == "100"].copy()
         for _, row in df_indirect_pbi.iterrows():
-            inf_l = str(row["inf. londres"]).strip()
+            inf_l = str(row["inf. londre"]).strip().upper()
             valor_original = row[col_saldo]
             mes_orig = row["Mes Contabilización"] if "Mes Contabilización" in row else None
 
-            # Distribuir este valor por todas las áreas según Funcionarios
+            # Distribuir este valor por todas las áreas operativas según Funcionarios
             for area_dest, perc in perc_func_map.items():
-                if area_dest == "100": continue # No redistribuir a la misma 100
+                if str(area_dest) == "100": continue
                 tabular_data.append({
                     "Mes": mes_orig,
                     "Area": area_dest,
                     "Seccion": "Indirect Costs",
                     "Concepto": inf_l,
-                    "Valor": valor_original * perc
+                    "Valor": (valor_original * perc) / 1000
                 })
 
         df_powerbi = pd.DataFrame(tabular_data)
-        print("Hoja 'BASE_DATA_POWERBI' generada.")
+        # Limpieza de nombres de concepto para que coincidan con la lista exacta
+        # Ordenamos por longitud descendente para evitar reemplazos parciales incorrectos
+        todas_las_keys = sorted(lista_ingresos + lista_staff + lista_expenses, key=len, reverse=True)
+        for c in todas_las_keys:
+            mask = df_powerbi["Concepto"].str.upper().str.contains(c, na=False)
+            df_powerbi.loc[mask, "Concepto"] = c.title()
+
+        print("Hoja 'BASE_DATA_POWERBI' generada (valores / 1000).")
     except Exception as e:
         print(f"Error al generar base Power BI: {e}")
 

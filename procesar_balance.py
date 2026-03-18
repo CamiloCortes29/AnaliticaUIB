@@ -194,6 +194,15 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error en ajuste Medellín: {e}")
 
+    # --- AJUSTE DIFERENCIA EN CAMBIO (24 -> 23) ---
+    try:
+        if "inf. londres" in df_principal.columns and "Area_2" in df_principal.columns:
+            mask_dife = (df_principal["inf. londres"].astype(str).str.strip().str.upper() == "FOREIGN EXCHANGE GAINS/(LOSSES)") & (df_principal["Area_2"] == "24")
+            df_principal.loc[mask_dife, "Area_Informe"] = "23"
+            print(f"Ajuste Diferencia en Cambio aplicado: {mask_dife.sum()} registros actualizados.")
+    except Exception as e:
+        print(f"Error en ajuste Diferencia en Cambio: {e}")
+
     # --- OVERRIDE AREA_INFORME = 20 (SOLO PARA UIB SEGUROS) ---
     try:
         if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns and "Nombre SN" in df_principal.columns:
@@ -258,6 +267,6 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v30.xlsx"
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v31.xlsx"
     if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
     else: print("Archivo no encontrado.")

@@ -58,46 +58,32 @@ def procesar_balance(filepath):
             mapeo_ccosto = df_ccosto.set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
 
-    # --- PARTE 3: Tablas Dinámicas y Normalización de Fecha ---
-    pivot_estrategias = None
-    pivot_seguros = None
-    pivot_movimiento = None
+    # --- NORMALIZACIÓN DE FECHA (Antes de las TDs) ---
     meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
                  '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'}
-
-    try:
-        posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
-        col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
-        if col_fecha:
-            df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], dayfirst=True, errors='coerce')
-            df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
-            df_principal[col_fecha] = df_principal[col_fecha].dt.date
-
-            # 1. TD Estrategias
-            filtro_londres_est = "COMMISSION PAID"
-            filtro_sn_est = "ESTRATEGIAS REA S.A.S."
-            df_est = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
-                                 (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_est.upper())]
-            if not df_est.empty:
-                pivot_estrategias = pd.pivot_table(df_est, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-
-            # 2. TD SEGUROS
-            filtro_sn_seg = "UIB CORREDORES DE SEGUROS S.A."
-            df_seg = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
-                                 (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_seg.upper())]
-            if not df_seg.empty:
-                pivot_seguros = pd.pivot_table(df_seg, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-    except Exception as e:
-        print(f"Error al generar las tablas dinámicas base: {e}")
+    posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
+    col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
+    if col_fecha:
+        df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], dayfirst=True, errors='coerce')
+        df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
 
     # --- PARTES 4-7: Actualizar Hoja "Catalina Valencia" ---
     df_catalina = None
     try:
         df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
         num_rows_cat = len(df_catalina)
-        if pivot_estrategias is not None:
+
+        # Generar TD temporal para Catalina
+        filtro_londres_est = "COMMISSION PAID"
+        filtro_sn_est = "ESTRATEGIAS REA S.A.S."
+        df_est_tmp = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
+                                  (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_est.upper())]
+
+        if not df_est_tmp.empty:
+            pivot_estrategias = pd.pivot_table(df_est_tmp, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
             pivot_data = pivot_estrategias.reset_index()
             cols_meses_pivot = [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]
+
             if num_rows_cat > 16:
                 header_row = df_catalina.iloc[16]
                 col_area_idx = 0
@@ -159,15 +145,19 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # --- PARTE 8, 9 & CONSOLIDACIÓN: Reversión y Explosión ---
+    # --- AJUSTES CONTABLES Y CONSOLIDACIÓN ---
     try:
+        header_row_cat = df_catalina.iloc[16] if df_catalina is not None else None
+        nuevos_registros = []
+
+        # 1. Ajustes Catalina Valencia Gomez
         filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
             df_cat_source = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_nombre_catalina.upper()].copy()
             if not df_cat_source.empty:
-                header_row_cat = df_catalina.iloc[16]
                 def get_areas_dist_range(range_rows):
                     info = []
+                    if df_catalina is None: return info
                     for idx_row in range_rows:
                         if idx_row >= len(df_catalina): break
                         area_n = str(df_catalina.iloc[idx_row, 0]).strip()
@@ -179,9 +169,10 @@ def procesar_balance(filepath):
                                 dist_meses[col_m] = df_catalina.iloc[idx_row, idx_col_m]
                         info.append({"area": area_n, "dist": dist_meses})
                     return info
+
                 dist_info_salaries = get_areas_dist_range(range(52, 68))
                 dist_info_other = get_areas_dist_range(range(68, 80))
-                nuevos_registros = []
+
                 for _, row in df_cat_source.iterrows():
                     mes_fila = row["Mes Contabilización"] if "Mes Contabilización" in row else None
                     mes_esp_f = meses_map.get(mes_fila.split('-')[1]) if mes_fila else None
@@ -189,109 +180,101 @@ def procesar_balance(filepath):
                     target_dist_info = dist_info_salaries if "SALARIES" in inf_londre_val else dist_info_other if "OTHER STAFF COSTS" in inf_londre_val else []
                     v_deb = pd.to_numeric(row[col_debito], errors='coerce') or 0
                     v_cre = pd.to_numeric(row[col_credito], errors='coerce') or 0
-                    row_reversion = row.copy()
-                    row_reversion[col_debito], row_reversion[col_credito] = v_cre, v_deb
-                    row_reversion[col_saldo] = row_reversion[col_debito] - row_reversion[col_credito]
-                    nuevos_registros.append(row_reversion)
+
+                    # Reversión
+                    row_rev = row.copy(); row_rev[col_debito], row_rev[col_credito] = v_cre, v_deb
+                    row_rev[col_saldo] = row_rev[col_debito] - row_rev[col_credito]
+                    nuevos_registros.append(row_rev)
+                    # Explosión
                     if v_deb > 0 and target_dist_info:
                         for area_item in target_dist_info:
-                            new_row_dist = row.copy()
-                            new_row_dist["AREA"] = area_item["area"]
-                            monto_dist = pd.to_numeric(area_item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
-                            new_row_dist[col_debito] = monto_dist
-                            new_row_dist[col_credito] = 0
-                            new_row_dist[col_saldo] = new_row_dist[col_debito] - new_row_dist[col_credito]
-                            nuevos_registros.append(new_row_dist)
-                if nuevos_registros:
-                    df_append = pd.DataFrame(nuevos_registros)
-                    df_principal = pd.concat([df_principal, df_append], ignore_index=True)
-                    print(f"Consolidación Catalina: {len(df_append)} filas añadidas.")
-    except Exception as e:
-        print(f"Error en consolidación: {e}")
+                            new_row = row.copy(); new_row["AREA"] = area_item["area"]
+                            new_row[col_debito] = pd.to_numeric(area_item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
+                            new_row[col_credito] = 0; new_row[col_saldo] = new_row[col_debito] - new_row[col_credito]
+                            nuevos_registros.append(new_row)
 
-    # --- PARTE 10: Hoja Funcionarios ---
+        # 2. AJUSTE BROKERAGE S (UIB Seguros + COMMISSION PAID)
+        filtro_sn_seg_adj = "UIB CORREDORES DE SEGUROS S.A."
+        filtro_lond_seg_adj = "COMMISSION PAID"
+        df_seg_adj_source = df_principal[(df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_seg_adj.upper()) &
+                                         (df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_lond_seg_adj.upper())].copy()
+
+        if not df_seg_adj_source.empty:
+            for _, row in df_seg_adj_source.iterrows():
+                v_deb_seg = pd.to_numeric(row[col_debito], errors='coerce') or 0
+                row_brokerage = row.copy()
+                row_brokerage[col_credito] = v_deb_seg
+                row_brokerage[col_debito] = 0
+                row_brokerage["inf. londres"] = "BROKERAGE S"
+                row_brokerage[col_saldo] = row_brokerage[col_debito] - row_brokerage[col_credito]
+                nuevos_registros.append(row_brokerage)
+            print(f"Ajuste BROKERAGE S generado: {len(df_seg_adj_source)} filas duplicadas.")
+
+        if nuevos_registros:
+            df_append = pd.DataFrame(nuevos_registros)
+            df_principal = pd.concat([df_principal, df_append], ignore_index=True)
+            print(f"Consolidación exitosa: {len(df_append)} registros adicionales añadidos.")
+    except Exception as e:
+        print(f"Error en fase de ajustes: {e}")
+
+    # --- PARTE 3: Tablas Dinámicas Finales ---
+    pivots_finales = {}
+    try:
+        # 1. TD Estrategias
+        df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") &
+                                (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
+        if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
+
+        # 2. TD SEGUROS
+        df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") &
+                                (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
+        if not df_seg_f.empty: pivots_finales["TD SEGUROS"] = pd.pivot_table(df_seg_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
+
+        # 3. TD Movimiento 2026 (Debe incluir BROKERAGE S)
+        pivot_mov = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
+        pivot_mov = pivot_mov.reindex(sorted(pivot_mov.columns), axis=1)
+        total_mov = pivot_mov.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov, total_mov])
+        pivots_finales["TD Movimiento 2026"] = pivot_mov
+        print("Tablas dinámicas finales generadas.")
+    except Exception as e:
+        print(f"Error en tablas dinámicas finales: {e}")
+
+    # --- PARTE 10: Funcionarios ---
     df_funcionarios = None
     try:
         df_funcionarios = pd.read_excel(filepath, sheet_name="Funcionarios")
         for col_idx in [10, 11, 12]:
-            while len(df_funcionarios.columns) <= col_idx:
-                df_funcionarios[f"Col_{len(df_funcionarios.columns)}"] = None
-            c_name = df_funcionarios.columns[col_idx]
-            df_funcionarios[c_name] = df_funcionarios[c_name].astype(object)
-        col_area_inf_func = df_funcionarios.columns[3]
-        conteos = df_funcionarios[col_area_inf_func].dropna().astype(str).str.strip().value_counts().reset_index()
-        conteos.columns = ["AREA INFORME", "No. funcionarios"]
-        total_func = conteos["No. funcionarios"].sum()
-        conteos["%"] = conteos["No. funcionarios"] / total_func if total_func != 0 else 0
-        df_funcionarios.iloc[0, 10] = "AREA INFORME"
-        df_funcionarios.iloc[0, 11] = "No. funcionarios"
-        df_funcionarios.iloc[0, 12] = "% participación"
-        for i, row_c in conteos.iterrows():
-            row_idx = i + 1
-            if row_idx < len(df_funcionarios):
-                df_funcionarios.iloc[row_idx, 10] = row_c["AREA INFORME"]; df_funcionarios.iloc[row_idx, 11] = row_c["No. funcionarios"]; df_funcionarios.iloc[row_idx, 12] = row_c["%"]
-        total_row_idx = len(conteos) + 1
-        if total_row_idx < len(df_funcionarios):
-            df_funcionarios.iloc[total_row_idx, 10] = "Total"; df_funcionarios.iloc[total_row_idx, 11] = total_func; df_funcionarios.iloc[total_row_idx, 12] = 1.0
+            while len(df_funcionarios.columns) <= col_idx: df_funcionarios[f"Col_{len(df_funcionarios.columns)}"] = None
+            df_funcionarios[df_funcionarios.columns[col_idx]] = df_funcionarios[df_funcionarios.columns[col_idx]].astype(object)
+        target_col_func = df_funcionarios.columns[3]
+        conteos = df_funcionarios[target_col_func].dropna().astype(str).str.strip().value_counts().reset_index()
+        conteos.columns = ["AREA INFORME", "No. funcionarios"]; total_f = conteos["No. funcionarios"].sum()
+        df_funcionarios.iloc[0, 10] = "AREA INFORME"; df_funcionarios.iloc[0, 11] = "No. funcionarios"; df_funcionarios.iloc[0, 12] = "% participación"
+        for i, r_c in conteos.iterrows():
+            if (i+1) < len(df_funcionarios): df_funcionarios.iloc[i+1, 10], df_funcionarios.iloc[i+1, 11], df_funcionarios.iloc[i+1, 12] = r_c["AREA INFORME"], r_c["No. funcionarios"], (r_c["No. funcionarios"]/total_f)
+        idx_t = len(conteos)+1
+        if idx_t < len(df_funcionarios): df_funcionarios.iloc[idx_t, 10], df_funcionarios.iloc[idx_t, 11], df_funcionarios.iloc[idx_t, 12] = "Total", total_f, 1.0
         print("Hoja 'Funcionarios' procesada.")
     except Exception as e:
-        print(f"Error al procesar hoja 'Funcionarios': {e}")
-
-    # --- PARTE 11: TD Movimiento 2026 ---
-    pivot_movimiento = None
-    try:
-        # Usar df_principal consolidado (con las reversiones y explosiones)
-        if not df_principal.empty:
-            # Organizar Area Informe de menor a mayor (alfabético/numérico)
-            # Primero ordenamos el DF principal para que el Pivot herede el orden o simplemente ordenamos el resultado
-            pivot_movimiento = pd.pivot_table(
-                df_principal,
-                values=col_saldo,
-                index=["inf. londres"],
-                columns=["Area_Informe"],
-                aggfunc="sum",
-                fill_value=0
-            )
-
-            # Ordenar columnas de menor a mayor
-            pivot_movimiento = pivot_movimiento.reindex(sorted(pivot_movimiento.columns), axis=1)
-
-            # Añadir fila de Total al final
-            total_row_mov = pivot_movimiento.sum().to_frame().T
-            total_row_mov.index = ["Total"]
-            pivot_movimiento = pd.concat([pivot_movimiento, total_row_mov])
-
-            print("TD Movimiento 2026 generada con totales.")
-    except Exception as e:
-        print(f"Error al generar TD Movimiento 2026: {e}")
+        print(f"Error en Funcionarios: {e}")
 
     # Guardar todo
     try:
-        cols_finales_drop = list(meses_map.values())
-        df_final_procesado = df_principal.copy()
-        for c in cols_finales_drop:
-            if c in df_final_procesado.columns:
-                df_final_procesado = df_final_procesado.drop(columns=[c])
-
+        df_final = df_principal.copy()
+        df_final[col_fecha] = pd.to_datetime(df_final[col_fecha], dayfirst=True).dt.date
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-            df_final_procesado.to_excel(writer, sheet_name="Procesado", index=False)
-            if pivot_estrategias is not None: pivot_estrategias.to_excel(writer, sheet_name="TD Estrategias")
-            if pivot_seguros is not None: pivot_seguros.to_excel(writer, sheet_name="TD SEGUROS")
-            if pivot_movimiento is not None: pivot_movimiento.to_excel(writer, sheet_name="TD Movimiento 2026")
+            df_final.to_excel(writer, sheet_name="Procesado", index=False)
+            for name, p_df in pivots_finales.items(): p_df.to_excel(writer, sheet_name=name)
             if df_catalina is not None: df_catalina.to_excel(writer, sheet_name="Catalina Valencia", index=False, header=False)
             if df_funcionarios is not None: df_funcionarios.to_excel(writer, sheet_name="Funcionarios", index=False)
         print("Todos los cambios guardados exitosamente.")
     except Exception as e:
-        print(f"Error al guardar el archivo: {e}")
+        print(f"Error al guardar: {e}")
 
     return df_principal
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v23.xlsx"
-        print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
-    if os.path.exists(ruta_archivo):
-        procesar_balance(ruta_archivo)
-    else:
-        print("Archivo no encontrado para procesar.")
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v24.xlsx"
+    if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
+    else: print("Archivo no encontrado.")

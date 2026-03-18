@@ -157,8 +157,6 @@ def procesar_balance(filepath):
                     v_d = pd.to_numeric(row[col_debito], errors='coerce') or 0; v_c = pd.to_numeric(row[col_credito], errors='coerce') or 0
 
                     r_rev = row.copy(); r_rev[col_debito], r_rev[col_credito] = v_c, v_d; r_rev[col_saldo] = r_rev[col_debito] - r_rev[col_credito]
-
-                    # Regla Catalina: Area_Informe = AREA (Truncado 1000->100)
                     a_rev = str(r_rev["AREA"]).strip()
                     r_rev["Area_Informe"] = a_rev[:3] if len(a_rev) >= 4 else a_rev
                     nuevos_registros.append(r_rev)
@@ -167,7 +165,6 @@ def procesar_balance(filepath):
                         for item in t_dist:
                             n_r = row.copy(); n_r["AREA"] = item["area"]; n_r[col_debito] = pd.to_numeric(item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
                             n_r[col_credito] = 0; n_r[col_saldo] = n_r[col_debito] - n_r[col_credito]
-                            # Regla Catalina: Area_Informe = AREA
                             a_n_r = str(n_r["AREA"]).strip()
                             n_r["Area_Informe"] = a_n_r[:3] if len(a_n_r) >= 4 else a_n_r
                             nuevos_registros.append(n_r)
@@ -191,33 +188,14 @@ def procesar_balance(filepath):
             df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
             mask_medellin = (df_principal["Nombre proyecto"].astype(str).str.strip().str.upper() == "MEDELLIN") & (df_principal["Area_Informe"] == "100")
             df_principal.loc[mask_medellin, "Area_Informe"] = "70"
+            print("Ajuste Medellín aplicado.")
     except Exception as e:
         print(f"Error en ajuste Medellín: {e}")
-
-    # --- AJUSTE DIFERENCIA EN CAMBIO (24 -> 23) ---
-    try:
-        if "inf. londres" in df_principal.columns and "Area_2" in df_principal.columns:
-            mask_dife = (df_principal["inf. londres"].astype(str).str.strip().str.upper() == "FOREIGN EXCHANGE GAINS/(LOSSES)") & (df_principal["Area_2"] == "24")
-            df_principal.loc[mask_dife, "Area_Informe"] = "23"
-            print(f"Ajuste Diferencia en Cambio aplicado: {mask_dife.sum()} registros actualizados.")
-    except Exception as e:
-        print(f"Error en ajuste Diferencia en Cambio: {e}")
-
-    # --- OVERRIDE AREA_INFORME = 20 (SOLO PARA UIB SEGUROS) ---
-    try:
-        if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns and "Nombre SN" in df_principal.columns:
-            df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
-            cond_lond = df_principal["inf. londres"].astype(str).str.strip().str.upper().isin(["COMMISSION PAID", "BROKERAGE S"])
-            cond_sn = df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A."
-            df_principal.loc[cond_lond & cond_sn, "Area_Informe"] = "20"
-    except Exception as e:
-        print(f"Error en override de Area_Informe: {e}")
 
     # --- TABLAS DINÁMICAS FINALES ---
     pivots_finales = {}
     try:
         df_principal["Area_Informe"] = df_principal["Area_Informe"].replace("nan", "Desconocido")
-        # Quitar "Area_2" de las filas de las tablas dinámicas
         df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
 

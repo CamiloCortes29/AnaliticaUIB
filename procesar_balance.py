@@ -58,7 +58,7 @@ def procesar_balance(filepath):
             mapeo_ccosto = df_ccosto.set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
 
-    # --- NORMALIZACIÓN DE FECHA (Antes de las TDs) ---
+    # --- NORMALIZACIÓN DE FECHA ---
     meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
                  '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'}
     posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
@@ -67,80 +67,64 @@ def procesar_balance(filepath):
         df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], dayfirst=True, errors='coerce')
         df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
 
-    # --- PARTES 4-7: Actualizar Hoja "Catalina Valencia" ---
+    # --- ACTUALIZAR CATALINA VALENCIA ---
     df_catalina = None
     try:
         df_catalina = pd.read_excel(filepath, sheet_name="Catalina Valencia", header=None)
         num_rows_cat = len(df_catalina)
-
-        # Generar TD temporal para Catalina
-        filtro_londres_est = "COMMISSION PAID"
-        filtro_sn_est = "ESTRATEGIAS REA S.A.S."
-        df_est_tmp = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
-                                  (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_est.upper())]
-
+        df_est_tmp = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") &
+                                  (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_tmp.empty:
             pivot_estrategias = pd.pivot_table(df_est_tmp, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
             pivot_data = pivot_estrategias.reset_index()
-            cols_meses_pivot = [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]
-
-            if num_rows_cat > 16:
-                header_row = df_catalina.iloc[16]
-                col_area_idx = 0
-                for col_mes_p in cols_meses_pivot:
-                    mes_num = col_mes_p.split('-')[1]
-                    nombre_mes_target = meses_map.get(mes_num)
-                    col_mes_idx = header_row[header_row == nombre_mes_target].index[0] if nombre_mes_target in header_row.values else None
-                    if col_mes_idx is not None:
-                        for i in range(17, 29):
-                            if i >= num_rows_cat: break
-                            area_num_val = str(df_catalina.iloc[i, col_area_idx]).strip()
-                            if not area_num_val or area_num_val == "nan": continue
-                            match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
-                            df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0] if not match.empty else 0
-
-                        if 29 < num_rows_cat:
-                            total_col = pd.to_numeric(df_catalina.iloc[17:29, col_mes_idx], errors='coerce').fillna(0).sum()
-                            df_catalina.iloc[29, col_mes_idx] = total_col
-                            for j in range(34, 47):
-                                if j >= num_rows_cat: break
-                                area_perc_val = str(df_catalina.iloc[j, col_area_idx]).strip()
-                                if not area_perc_val or area_perc_val == "nan": continue
-                                val_area = 0
-                                for r_search in range(17, 29):
-                                    if r_search >= num_rows_cat: break
-                                    if str(df_catalina.iloc[r_search, col_area_idx]).strip() == area_perc_val:
-                                        val_area = df_catalina.iloc[r_search, col_mes_idx]
-                                        break
-                                df_catalina.iloc[j, col_mes_idx] = (val_area / total_col) if total_col != 0 else 0
-
-                        if 2 < num_rows_cat:
-                            val_base_linea_3 = pd.to_numeric(df_catalina.iloc[2, col_mes_idx], errors='coerce') or 0
-                            for k in range(52, 65):
-                                if k >= num_rows_cat: break
-                                area_dist_val = str(df_catalina.iloc[k, col_area_idx]).strip()
-                                if not area_dist_val or area_dist_val == "nan": continue
-                                perc_area = 0
-                                for r_perc in range(34, 47):
-                                    if r_perc >= num_rows_cat: break
-                                    if str(df_catalina.iloc[r_perc, col_area_idx]).strip() == area_dist_val:
-                                        perc_area = df_catalina.iloc[r_perc, col_mes_idx]
-                                        break
-                                df_catalina.iloc[k, col_mes_idx] = perc_area * val_base_linea_3
-
-                        if num_rows_cat > 12:
-                            suma_rango_4_13 = pd.to_numeric(df_catalina.iloc[3:13, col_mes_idx], errors='coerce').fillna(0).sum()
-                            for l in range(68, 81):
-                                if l >= num_rows_cat: break
-                                area_range_val = str(df_catalina.iloc[l, col_area_idx]).strip()
-                                if not area_range_val or area_range_val == "nan": continue
-                                perc_area_r = 0
-                                for r_perc_r in range(34, 47):
-                                    if r_perc_r >= num_rows_cat: break
-                                    if str(df_catalina.iloc[r_perc_r, col_area_idx]).strip() == area_range_val:
-                                        perc_area_r = df_catalina.iloc[r_perc_r, col_mes_idx]
-                                        break
-                                df_catalina.iloc[l, col_mes_idx] = perc_area_r * suma_rango_4_13
+            header_row = df_catalina.iloc[16]
+            for col_mes_p in [c for c in pivot_data.columns if c not in ["Area_2", "Area_Informe"]]:
+                mes_num = col_mes_p.split('-')[1]; nombre_mes_target = meses_map.get(mes_num)
+                col_mes_idx = header_row[header_row == nombre_mes_target].index[0] if nombre_mes_target in header_row.values else None
+                if col_mes_idx is not None:
+                    for i in range(17, 29):
+                        if i >= num_rows_cat: break
+                        area_num_val = str(df_catalina.iloc[i, 0]).strip()
+                        if not area_num_val or area_num_val == "nan": continue
+                        match = pivot_data[pivot_data["Area_2"].astype(str).str.strip() == area_num_val]
+                        df_catalina.iloc[i, col_mes_idx] = match[col_mes_p].values[0] if not match.empty else 0
+                    if 29 < num_rows_cat:
+                        total_col = pd.to_numeric(df_catalina.iloc[17:29, col_mes_idx], errors='coerce').fillna(0).sum()
+                        df_catalina.iloc[29, col_mes_idx] = total_col
+                        for j in range(34, 47):
+                            if j >= num_rows_cat: break
+                            area_perc_val = str(df_catalina.iloc[j, 0]).strip()
+                            if not area_perc_val or area_perc_val == "nan": continue
+                            val_area = 0
+                            for r_search in range(17, 29):
+                                if r_search >= num_rows_cat: break
+                                if str(df_catalina.iloc[r_search, 0]).strip() == area_perc_val:
+                                    val_area = df_catalina.iloc[r_search, col_mes_idx]; break
+                            df_catalina.iloc[j, col_mes_idx] = (val_area / total_col) if total_col != 0 else 0
+                    if 2 < num_rows_cat:
+                        val_base_linea_3 = pd.to_numeric(df_catalina.iloc[2, col_mes_idx], errors='coerce') or 0
+                        for k in range(52, 65):
+                            if k >= num_rows_cat: break
+                            area_dist_val = str(df_catalina.iloc[k, 0]).strip()
+                            if not area_dist_val or area_dist_val == "nan": continue
+                            perc_area = 0
+                            for r_perc in range(34, 47):
+                                if r_perc >= num_rows_cat: break
+                                if str(df_catalina.iloc[r_perc, 0]).strip() == area_dist_val:
+                                    perc_area = df_catalina.iloc[r_perc, col_mes_idx]; break
+                            df_catalina.iloc[k, col_mes_idx] = perc_area * val_base_linea_3
+                    if num_rows_cat > 12:
+                        suma_rango_4_13 = pd.to_numeric(df_catalina.iloc[3:13, col_mes_idx], errors='coerce').fillna(0).sum()
+                        for l in range(68, 81):
+                            if l >= num_rows_cat: break
+                            area_range_val = str(df_catalina.iloc[l, 0]).strip()
+                            if not area_range_val or area_range_val == "nan": continue
+                            perc_area_r = 0
+                            for r_perc_r in range(34, 47):
+                                if r_perc_r >= num_rows_cat: break
+                                if str(df_catalina.iloc[r_perc_r, 0]).strip() == area_range_val:
+                                    perc_area_r = df_catalina.iloc[r_perc_r, col_mes_idx]; break
+                            df_catalina.iloc[l, col_mes_idx] = perc_area_r * suma_rango_4_13
             print("Hoja 'Catalina Valencia' actualizada.")
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
@@ -149,88 +133,66 @@ def procesar_balance(filepath):
     try:
         header_row_cat = df_catalina.iloc[16] if df_catalina is not None else None
         nuevos_registros = []
-
-        # 1. Ajustes Catalina Valencia Gomez
-        filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
-            df_cat_source = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_nombre_catalina.upper()].copy()
+            # 1. Ajustes Catalina
+            df_cat_source = df_principal[df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "CATALINA VALENCIA GOMEZ"].copy()
             if not df_cat_source.empty:
-                def get_areas_dist_range(range_rows):
+                def get_dist(range_rows):
                     info = []
                     if df_catalina is None: return info
-                    for idx_row in range_rows:
-                        if idx_row >= len(df_catalina): break
-                        area_n = str(df_catalina.iloc[idx_row, 0]).strip()
-                        if not area_n or area_n == "nan": continue
-                        dist_meses = {}
-                        for col_m in meses_map.values():
-                            if col_m in header_row_cat.values:
-                                idx_col_m = header_row_cat[header_row_cat == col_m].index[0]
-                                dist_meses[col_m] = df_catalina.iloc[idx_row, idx_col_m]
-                        info.append({"area": area_n, "dist": dist_meses})
+                    for r in range_rows:
+                        if r >= len(df_catalina): break
+                        a = str(df_catalina.iloc[r, 0]).strip()
+                        if not a or a == "nan": continue
+                        dm = {}
+                        for m in meses_map.values():
+                            if m in header_row_cat.values: dm[m] = df_catalina.iloc[r, header_row_cat[header_row_cat == m].index[0]]
+                        info.append({"area": a, "dist": dm})
                     return info
-
-                dist_info_salaries = get_areas_dist_range(range(52, 68))
-                dist_info_other = get_areas_dist_range(range(68, 80))
-
+                d_sal = get_dist(range(52, 68)); d_oth = get_dist(range(68, 80))
                 for _, row in df_cat_source.iterrows():
-                    mes_fila = row["Mes Contabilización"] if "Mes Contabilización" in row else None
-                    mes_esp_f = meses_map.get(mes_fila.split('-')[1]) if mes_fila else None
-                    inf_londre_val = str(row["inf. londres"]).strip().upper() if "inf. londres" in row else ""
-                    target_dist_info = dist_info_salaries if "SALARIES" in inf_londre_val else dist_info_other if "OTHER STAFF COSTS" in inf_londre_val else []
-                    v_deb = pd.to_numeric(row[col_debito], errors='coerce') or 0
-                    v_cre = pd.to_numeric(row[col_credito], errors='coerce') or 0
-
-                    # Reversión
-                    row_rev = row.copy(); row_rev[col_debito], row_rev[col_credito] = v_cre, v_deb
-                    row_rev[col_saldo] = row_rev[col_debito] - row_rev[col_credito]
-                    nuevos_registros.append(row_rev)
-                    # Explosión
-                    if v_deb > 0 and target_dist_info:
-                        for area_item in target_dist_info:
-                            new_row = row.copy(); new_row["AREA"] = area_item["area"]
-                            new_row[col_debito] = pd.to_numeric(area_item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
-                            new_row[col_credito] = 0; new_row[col_saldo] = new_row[col_debito] - new_row[col_credito]
-                            nuevos_registros.append(new_row)
-
-        # 2. AJUSTE BROKERAGE S (UIB Seguros + COMMISSION PAID)
-        filtro_sn_seg_adj = "UIB CORREDORES DE SEGUROS S.A."
-        filtro_lond_seg_adj = "COMMISSION PAID"
-        df_seg_adj_source = df_principal[(df_principal["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_seg_adj.upper()) &
-                                         (df_principal["inf. londres"].astype(str).str.strip().str.upper() == filtro_lond_seg_adj.upper())].copy()
-
-        if not df_seg_adj_source.empty:
-            for _, row in df_seg_adj_source.iterrows():
-                v_deb_seg = pd.to_numeric(row[col_debito], errors='coerce') or 0
-                row_brokerage = row.copy()
-                row_brokerage[col_credito] = v_deb_seg
-                row_brokerage[col_debito] = 0
-                row_brokerage["inf. londres"] = "BROKERAGE S"
-                row_brokerage[col_saldo] = row_brokerage[col_debito] - row_brokerage[col_credito]
-                nuevos_registros.append(row_brokerage)
-            print(f"Ajuste BROKERAGE S generado: {len(df_seg_adj_source)} filas duplicadas.")
+                    mes_esp_f = meses_map.get(row["Mes Contabilización"].split('-')[1]) if "Mes Contabilización" in row else None
+                    inf_l = str(row["inf. londres"]).strip().upper()
+                    t_dist = d_sal if "SALARIES" in inf_l else d_oth if "OTHER STAFF COSTS" in inf_l else []
+                    v_d = pd.to_numeric(row[col_debito], errors='coerce') or 0; v_c = pd.to_numeric(row[col_credito], errors='coerce') or 0
+                    r_rev = row.copy(); r_rev[col_debito], r_rev[col_credito] = v_c, v_d; r_rev[col_saldo] = r_rev[col_debito] - r_rev[col_credito]
+                    nuevos_registros.append(r_rev)
+                    if v_d > 0 and t_dist:
+                        for item in t_dist:
+                            n_r = row.copy(); n_r["AREA"] = item["area"]; n_r[col_debito] = pd.to_numeric(item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
+                            n_r[col_credito] = 0; n_r[col_saldo] = n_r[col_debito] - n_r[col_credito]; nuevos_registros.append(n_r)
+            # 2. Ajuste Brokerage S
+            df_seg_source = df_principal[(df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.") &
+                                         (df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID")].copy()
+            for _, row in df_seg_source.iterrows():
+                r_b = row.copy(); r_b[col_credito] = pd.to_numeric(row[col_debito], errors='coerce') or 0; r_b[col_debito] = 0
+                r_b["inf. londres"] = "BROKERAGE S"; r_b[col_saldo] = r_b[col_debito] - r_b[col_credito]; nuevos_registros.append(r_b)
 
         if nuevos_registros:
-            df_append = pd.DataFrame(nuevos_registros)
-            df_principal = pd.concat([df_principal, df_append], ignore_index=True)
-            print(f"Consolidación exitosa: {len(df_append)} registros adicionales añadidos.")
+            df_principal = pd.concat([df_principal, pd.DataFrame(nuevos_registros)], ignore_index=True)
+            print(f"Ajustes consolidados: {len(nuevos_registros)} filas añadidas.")
     except Exception as e:
         print(f"Error en fase de ajustes: {e}")
 
-    # --- PARTE 3: Tablas Dinámicas Finales ---
+    # --- OVERRIDE AREA_INFORME = 20 ---
+    # Se aplica cuando inf. londres es COMMISSION PAID o BROKERAGE S
+    try:
+        if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns:
+            condicion_override = df_principal["inf. londres"].astype(str).str.strip().str.upper().isin(["COMMISSION PAID", "BROKERAGE S"])
+            df_principal.loc[condicion_override, "Area_Informe"] = "20"
+            print("Override Area_Informe = 20 aplicado para COMMISSION PAID y BROKERAGE S.")
+    except Exception as e:
+        print(f"Error en override de Area_Informe: {e}")
+
+    # --- TABLAS DINÁMICAS FINALES ---
     pivots_finales = {}
     try:
-        # 1. TD Estrategias
-        df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") &
-                                (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
+        df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
 
-        # 2. TD SEGUROS
-        df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") &
-                                (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
+        df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
         if not df_seg_f.empty: pivots_finales["TD SEGUROS"] = pd.pivot_table(df_seg_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
 
-        # 3. TD Movimiento 2026 (Debe incluir BROKERAGE S)
         pivot_mov = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
         pivot_mov = pivot_mov.reindex(sorted(pivot_mov.columns), axis=1)
         total_mov = pivot_mov.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov, total_mov])
@@ -239,17 +201,16 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error en tablas dinámicas finales: {e}")
 
-    # --- PARTE 10: Funcionarios ---
+    # --- FUNCIONARIOS ---
     df_funcionarios = None
     try:
         df_funcionarios = pd.read_excel(filepath, sheet_name="Funcionarios")
         for col_idx in [10, 11, 12]:
             while len(df_funcionarios.columns) <= col_idx: df_funcionarios[f"Col_{len(df_funcionarios.columns)}"] = None
             df_funcionarios[df_funcionarios.columns[col_idx]] = df_funcionarios[df_funcionarios.columns[col_idx]].astype(object)
-        target_col_func = df_funcionarios.columns[3]
-        conteos = df_funcionarios[target_col_func].dropna().astype(str).str.strip().value_counts().reset_index()
+        conteos = df_funcionarios[df_funcionarios.columns[3]].dropna().astype(str).str.strip().value_counts().reset_index()
         conteos.columns = ["AREA INFORME", "No. funcionarios"]; total_f = conteos["No. funcionarios"].sum()
-        df_funcionarios.iloc[0, 10] = "AREA INFORME"; df_funcionarios.iloc[0, 11] = "No. funcionarios"; df_funcionarios.iloc[0, 12] = "% participación"
+        df_funcionarios.iloc[0, 10], df_funcionarios.iloc[0, 11], df_funcionarios.iloc[0, 12] = "AREA INFORME", "No. funcionarios", "% participación"
         for i, r_c in conteos.iterrows():
             if (i+1) < len(df_funcionarios): df_funcionarios.iloc[i+1, 10], df_funcionarios.iloc[i+1, 11], df_funcionarios.iloc[i+1, 12] = r_c["AREA INFORME"], r_c["No. funcionarios"], (r_c["No. funcionarios"]/total_f)
         idx_t = len(conteos)+1
@@ -258,7 +219,7 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error en Funcionarios: {e}")
 
-    # Guardar todo
+    # Guardar
     try:
         df_final = df_principal.copy()
         df_final[col_fecha] = pd.to_datetime(df_final[col_fecha], dayfirst=True).dt.date
@@ -275,6 +236,6 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v24.xlsx"
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v25.xlsx"
     if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
     else: print("Archivo no encontrado.")

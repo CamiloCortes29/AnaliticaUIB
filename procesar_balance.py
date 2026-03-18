@@ -155,12 +155,25 @@ def procesar_balance(filepath):
                     inf_l = str(row["inf. londres"]).strip().upper()
                     t_dist = d_sal if "SALARIES" in inf_l else d_oth if "OTHER STAFF COSTS" in inf_l else []
                     v_d = pd.to_numeric(row[col_debito], errors='coerce') or 0; v_c = pd.to_numeric(row[col_credito], errors='coerce') or 0
-                    r_rev = row.copy(); r_rev[col_debito], r_rev[col_credito] = v_c, v_d; r_rev[col_saldo] = r_rev[col_debito] - r_rev[col_credito]
+
+                    # Reversión (Sync Area_Informe = AREA)
+                    r_rev = row.copy()
+                    r_rev[col_debito], r_rev[col_credito] = v_c, v_d
+                    r_rev[col_saldo] = r_rev[col_debito] - r_rev[col_credito]
+                    r_rev["Area_Informe"] = r_rev["AREA"]
                     nuevos_registros.append(r_rev)
+
+                    # Explosión (Sync Area_Informe = AREA)
                     if v_d > 0 and t_dist:
                         for item in t_dist:
-                            n_r = row.copy(); n_r["AREA"] = item["area"]; n_r[col_debito] = pd.to_numeric(item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
-                            n_r[col_credito] = 0; n_r[col_saldo] = n_r[col_debito] - n_r[col_credito]; nuevos_registros.append(n_r)
+                            n_r = row.copy()
+                            n_r["AREA"] = item["area"]
+                            n_r[col_debito] = pd.to_numeric(item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
+                            n_r[col_credito] = 0
+                            n_r[col_saldo] = n_r[col_debito] - n_r[col_credito]
+                            n_r["Area_Informe"] = n_r["AREA"]
+                            nuevos_registros.append(n_r)
+
             # 2. Ajuste Brokerage S
             df_seg_source = df_principal[(df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.") &
                                          (df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID")].copy()
@@ -188,11 +201,10 @@ def procesar_balance(filepath):
     try:
         if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns and "Nombre SN" in df_principal.columns:
             df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
-            # Condición refinada: COMMISSION PAID/BROKERAGE S Y Nombre SN == UIB CORREDORES DE SEGUROS S.A.
             cond_lond = df_principal["inf. londres"].astype(str).str.strip().str.upper().isin(["COMMISSION PAID", "BROKERAGE S"])
             cond_sn = df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A."
             df_principal.loc[cond_lond & cond_sn, "Area_Informe"] = "20"
-            print("Override Area_Informe = 20 aplicado únicamente para UIB SEGUROS.")
+            print("Override Area_Informe = 20 aplicado para UIB SEGUROS.")
     except Exception as e:
         print(f"Error en override de Area_Informe: {e}")
 
@@ -247,6 +259,6 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v28.xlsx"
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v29.xlsx"
     if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
     else: print("Archivo no encontrado.")

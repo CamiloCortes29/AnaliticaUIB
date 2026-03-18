@@ -41,8 +41,9 @@ def procesar_balance(filepath):
     col_credito = "Crédito Moneda Local"
     col_saldo = "Saldo Final (Moneda Local)"
     if col_debito in df_principal.columns and col_credito in df_principal.columns:
-        df_principal[col_saldo] = pd.to_numeric(df_principal[col_debito], errors='coerce').fillna(0) - \
-                                  pd.to_numeric(df_principal[col_credito], errors='coerce').fillna(0)
+        df_principal[col_debito] = pd.to_numeric(df_principal[col_debito], errors='coerce').fillna(0)
+        df_principal[col_credito] = pd.to_numeric(df_principal[col_credito], errors='coerce').fillna(0)
+        df_principal[col_saldo] = df_principal[col_debito] - df_principal[col_credito]
 
     col_area = "AREA"
     if col_area in df_principal.columns:
@@ -153,7 +154,7 @@ def procesar_balance(filepath):
     except Exception as e:
         print(f"Error al actualizar 'Catalina Valencia': {e}")
 
-    # --- PARTE 8, 9 & CONSOLIDACIÓN FINAL: Reversión y Explosión Refinada ---
+    # --- PARTE 8, 9 & CONSOLIDACIÓN FINAL: Reversión y Explosión Robusta ---
     try:
         filtro_nombre_catalina = "CATALINA VALENCIA GOMEZ"
         if "Nombre SN" in df_principal.columns:
@@ -161,7 +162,6 @@ def procesar_balance(filepath):
 
             if not df_cat_source.empty:
                 header_row_cat = df_catalina.iloc[16]
-
                 def get_areas_dist_range(range_rows):
                     info = []
                     for idx_row in range_rows:
@@ -186,33 +186,32 @@ def procesar_balance(filepath):
                     inf_londre_val = str(row["inf. londres"]).strip().upper() if "inf. londres" in row else ""
                     target_dist_info = dist_info_salaries if "SALARIES" in inf_londre_val else dist_info_other if "OTHER STAFF COSTS" in inf_londre_val else []
 
-                    # A. Registro de Reversión (Anular original)
+                    # Asegurar tipos numéricos para cálculos
+                    v_deb = pd.to_numeric(row[col_debito], errors='coerce') or 0
+                    v_cre = pd.to_numeric(row[col_credito], errors='coerce') or 0
+
+                    # A. Reversión
                     row_reversion = row.copy()
-                    row_reversion[col_debito], row_reversion[col_credito] = row[col_credito], row[col_debito]
-                    # Calcular Saldo Final para la reversión
+                    row_reversion[col_debito], row_reversion[col_credito] = v_cre, v_deb
                     row_reversion[col_saldo] = row_reversion[col_debito] - row_reversion[col_credito]
                     nuevos_registros.append(row_reversion)
 
-                    # B. Registro de Explosión (Distribución)
-                    # Si el original era Débito, creamos múltiples Débitos por área
-                    if row[col_debito] > 0 and target_dist_info:
+                    # B. Explosión
+                    if v_deb > 0 and target_dist_info:
                         for area_item in target_dist_info:
                             new_row_dist = row.copy()
                             new_row_dist["AREA"] = area_item["area"]
-                            monto_dist = area_item["dist"].get(mes_esp_f, 0) if mes_esp_f else 0
+                            monto_dist = pd.to_numeric(area_item["dist"].get(mes_esp_f, 0), errors='coerce') or 0
                             new_row_dist[col_debito] = monto_dist
                             new_row_dist[col_credito] = 0
-                            # Calcular Saldo Final para la distribución
                             new_row_dist[col_saldo] = new_row_dist[col_debito] - new_row_dist[col_credito]
                             nuevos_registros.append(new_row_dist)
 
                 if nuevos_registros:
                     df_append = pd.DataFrame(nuevos_registros)
-                    # Eliminar columnas con nombres de meses (Ene, Feb, etc.) antes de anexar
                     cols_to_drop = [m for m in meses_map.values() if m in df_append.columns]
                     if cols_to_drop:
                         df_append = df_append.drop(columns=cols_to_drop)
-
                     df_principal = pd.concat([df_principal, df_append], ignore_index=True)
                     print(f"Consolidación exitosa en Procesado: {len(df_append)} registros añadidos.")
 
@@ -222,13 +221,11 @@ def procesar_balance(filepath):
     # Guardar todo
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-            # Eliminar columnas auxiliares antes de guardar Procesado
             cols_finales_drop = ["Mes Contabilización"] + list(meses_map.values())
             df_final_procesado = df_principal.copy()
             for c in cols_finales_drop:
                 if c in df_final_procesado.columns:
                     df_final_procesado = df_final_procesado.drop(columns=[c])
-
             df_final_procesado.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_table is not None:
                 pivot_table.to_excel(writer, sheet_name="TD Estrategias")
@@ -243,7 +240,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v17.xlsx"
+        ruta_archivo = "Balance_Prueba_v18.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

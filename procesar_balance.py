@@ -57,7 +57,7 @@ def procesar_balance(filepath):
             mapeo_ccosto = df_ccosto.set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
 
-    # --- PARTE 3: Tablas Dinámicas ---
+    # --- PARTE 3: Tablas Dinámicas y Normalización de Fecha ---
     pivot_estrategias = None
     pivot_seguros = None
     meses_map = {'01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
@@ -67,46 +67,39 @@ def procesar_balance(filepath):
         posibles_nombres_fecha = ["Fecha contabilización", "Fecha Contabilización", "Fecha contabilizacion", "Fecha Contabilizacion"]
         col_fecha = next((c for c in posibles_nombres_fecha if c in df_principal.columns), None)
         if col_fecha:
-            df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], errors='coerce')
+            # Normalizar fecha con dayfirst=True para formato Latino/Europeo
+            df_principal[col_fecha] = pd.to_datetime(df_principal[col_fecha], dayfirst=True, errors='coerce')
+
+            # Crear columna Mes Contabilización (PERMANENTE)
             df_principal["Mes Contabilización"] = df_principal[col_fecha].dt.strftime('%Y-%m')
 
-            # Filtros base
-            col_londres = "inf. londres"
-            col_sn = "Nombre SN"
+            # Dejar solo la fecha (sin hora) para evitar corrupción de Excel
+            df_principal[col_fecha] = df_principal[col_fecha].dt.date
 
             # 1. TD Estrategias
             filtro_londres_est = "COMMISSION PAID"
             filtro_sn_est = "ESTRATEGIAS REA S.A.S."
             df_est = df_principal.copy()
-            if col_londres in df_est.columns:
-                df_est = df_est[df_est[col_londres].astype(str).str.strip().str.upper() == filtro_londres_est.upper()]
-            if col_sn in df_est.columns:
-                df_sn_mask = df_est[col_sn].astype(str).str.strip().str.upper() == filtro_sn_est.upper()
-                df_est = df_est[df_sn_mask]
+            df_est = df_est[(df_est["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
+                            (df_est["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_est.upper())]
 
             if not df_est.empty:
                 pivot_estrategias = pd.pivot_table(
                     df_est, values=col_saldo, index=["Area_2", "Area_Informe"],
                     columns=["Mes Contabilización"], aggfunc="sum", fill_value=0
                 )
-                print("Tabla dinámica 'TD Estrategias' generada.")
 
             # 2. TD SEGUROS
-            filtro_londres_seg = "COMMISSION PAID"
             filtro_sn_seg = "UIB CORREDORES DE SEGUROS S.A."
             df_seg = df_principal.copy()
-            if col_londres in df_seg.columns:
-                df_seg = df_seg[df_seg[col_londres].astype(str).str.strip().str.upper() == filtro_londres_seg.upper()]
-            if col_sn in df_seg.columns:
-                df_sn_seg_mask = df_seg[col_sn].astype(str).str.strip().str.upper() == filtro_sn_seg.upper()
-                df_seg = df_seg[df_sn_seg_mask]
+            df_seg = df_seg[(df_seg["inf. londres"].astype(str).str.strip().str.upper() == filtro_londres_est.upper()) &
+                            (df_seg["Nombre SN"].astype(str).str.strip().str.upper() == filtro_sn_seg.upper())]
 
             if not df_seg.empty:
                 pivot_seguros = pd.pivot_table(
                     df_seg, values=col_saldo, index=["Area_Informe"],
                     columns=["Mes Contabilización"], aggfunc="sum", fill_value=0
                 )
-                print("Tabla dinámica 'TD SEGUROS' generada.")
     except Exception as e:
         print(f"Error al generar las tablas dinámicas: {e}")
 
@@ -215,11 +208,13 @@ def procesar_balance(filepath):
                     v_deb = pd.to_numeric(row[col_debito], errors='coerce') or 0
                     v_cre = pd.to_numeric(row[col_credito], errors='coerce') or 0
 
+                    # 1. Reversión
                     row_reversion = row.copy()
                     row_reversion[col_debito], row_reversion[col_credito] = v_cre, v_deb
                     row_reversion[col_saldo] = row_reversion[col_debito] - row_reversion[col_credito]
                     nuevos_registros.append(row_reversion)
 
+                    # 2. Explosión
                     if v_deb > 0 and target_dist_info:
                         for area_item in target_dist_info:
                             new_row_dist = row.copy()
@@ -232,22 +227,23 @@ def procesar_balance(filepath):
 
                 if nuevos_registros:
                     df_append = pd.DataFrame(nuevos_registros)
-                    cols_to_drop = [m for m in meses_map.values() if m in df_append.columns]
-                    if cols_to_drop:
-                        df_append = df_append.drop(columns=cols_to_drop)
                     df_principal = pd.concat([df_principal, df_append], ignore_index=True)
+                    print(f"Consolidación exitosa: {len(df_append)} registros añadidos.")
 
     except Exception as e:
         print(f"Error en consolidación: {e}")
 
     # Guardar todo
     try:
+        # Limpiar columnas temporales de meses (Ene, Feb...) de df_principal si aparecieron
+        cols_a_quitar = list(meses_map.values())
+        df_final_procesado = df_principal.copy()
+        for c in cols_a_quitar:
+            if c in df_final_procesado.columns:
+                df_final_procesado = df_final_procesado.drop(columns=[c])
+
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-            cols_finales_drop = ["Mes Contabilización"] + list(meses_map.values())
-            df_final_procesado = df_principal.copy()
-            for c in cols_finales_drop:
-                if c in df_final_procesado.columns:
-                    df_final_procesado = df_final_procesado.drop(columns=[c])
+            # Mantener 'Mes Contabilización' como permanente
             df_final_procesado.to_excel(writer, sheet_name="Procesado", index=False)
             if pivot_estrategias is not None:
                 pivot_estrategias.to_excel(writer, sheet_name="TD Estrategias")
@@ -264,7 +260,7 @@ def procesar_balance(filepath):
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
     if not os.path.exists(ruta_archivo):
-        ruta_archivo = "Balance_Prueba_v19.xlsx"
+        ruta_archivo = "Balance_Prueba_v20.xlsx"
         print(f"Ruta original no encontrada, usando local: {ruta_archivo}")
 
     if os.path.exists(ruta_archivo):

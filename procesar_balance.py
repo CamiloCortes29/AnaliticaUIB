@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import numpy as np
 
 def procesar_balance(filepath):
     print(f"Iniciando procesamiento de: {filepath}")
@@ -196,37 +197,91 @@ def procesar_balance(filepath):
     pivots_finales = {}
     try:
         df_principal["Area_Informe"] = df_principal["Area_Informe"].replace("nan", "Desconocido")
+        # TD Estrategias
         df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
 
+        # TD SEGUROS
         df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
         if not df_seg_f.empty: pivots_finales["TD SEGUROS"] = pd.pivot_table(df_seg_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
 
-        pivot_mov = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
-        pivot_mov = pivot_mov.reindex(sorted(pivot_mov.columns), axis=1)
-        total_mov = pivot_mov.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov, total_mov])
+        # TD Movimiento 2026 (Pivot Original para cálculos avanzados)
+        pivot_mov_orig = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
+        pivot_mov_orig = pivot_mov_orig.reindex(sorted(pivot_mov_orig.columns), axis=1)
+        total_mov = pivot_mov_orig.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov_orig, total_mov])
         pivots_finales["TD Movimiento 2026"] = pivot_mov
-        print("Tablas dinámicas finales generadas.")
+        print("Tablas dinámicas iniciales generadas.")
     except Exception as e:
         print(f"Error en tablas dinámicas finales: {e}")
 
     # --- FUNCIONARIOS ---
     df_funcionarios = None
+    perc_func_map = {}
     try:
         df_funcionarios = pd.read_excel(filepath, sheet_name="Funcionarios")
         for col_idx in [10, 11, 12]:
             while len(df_funcionarios.columns) <= col_idx: df_funcionarios[f"Col_{len(df_funcionarios.columns)}"] = None
             df_funcionarios[df_funcionarios.columns[col_idx]] = df_funcionarios[df_funcionarios.columns[col_idx]].astype(object)
-        conteos = df_funcionarios[df_funcionarios.columns[3]].dropna().astype(str).str.strip().value_counts().reset_index()
+
+        target_col_idx = 3 # Columna D
+        conteos = df_funcionarios[df_funcionarios.columns[target_col_idx]].dropna().astype(str).str.strip().value_counts().reset_index()
         conteos.columns = ["AREA INFORME", "No. funcionarios"]; total_f = conteos["No. funcionarios"].sum()
         df_funcionarios.iloc[0, 10], df_funcionarios.iloc[0, 11], df_funcionarios.iloc[0, 12] = "AREA INFORME", "No. funcionarios", "% participación"
+
         for i, r_c in conteos.iterrows():
-            if (i+1) < len(df_funcionarios): df_funcionarios.iloc[i+1, 10], df_funcionarios.iloc[i+1, 11], df_funcionarios.iloc[i+1, 12] = r_c["AREA INFORME"], r_c["No. funcionarios"], (r_c["No. funcionarios"]/total_f)
+            if (i+1) < len(df_funcionarios):
+                df_funcionarios.iloc[i+1, 10] = r_c["AREA INFORME"]
+                df_funcionarios.iloc[i+1, 11] = r_c["No. funcionarios"]
+                df_participation = r_c["No. funcionarios"]/total_f if total_f != 0 else 0
+                df_funcionarios.iloc[i+1, 12] = df_participation
+                perc_func_map[str(r_c["AREA INFORME"]).replace(".0", "")] = df_participation
+
         idx_t = len(conteos)+1
         if idx_t < len(df_funcionarios): df_funcionarios.iloc[idx_t, 10], df_funcionarios.iloc[idx_t, 11], df_funcionarios.iloc[idx_t, 12] = "Total", total_f, 1.0
         print("Hoja 'Funcionarios' procesada.")
     except Exception as e:
         print(f"Error en Funcionarios: {e}")
+
+    # --- PARTE 12: CÁLCULOS AVANZADOS EN TD MOVIMIENTO 2026 ---
+    try:
+        cols_target = ["20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "70", "90", "100"]
+        indices_target = ["INFORMATION TECHNOLOGY", "OCCUPANCY", "PRINTING, POSTAGE, STATIONERY, TELEPHONES"]
+        df_directos = pd.DataFrame(index=indices_target, columns=cols_target)
+
+        for concepto in indices_target:
+            val_base_100 = 0
+            # IMPORTANTE: Usar .get() o verificar índices para evitar KeyErrors
+            if concepto in pivot_mov_orig.index and "100" in pivot_mov_orig.columns:
+                val_base_100 = pivot_mov_orig.loc[concepto, "100"]
+
+            for area in cols_target:
+                p_a = perc_func_map.get(str(area), 0)
+                df_directos.loc[concepto, area] = val_base_100 * p_a
+
+        hoja_mov_rows = []
+        pivot_mov_sheet = pivots_finales["TD Movimiento 2026"].reset_index()
+        hoja_mov_rows.extend(pivot_mov_sheet.values.tolist())
+
+        while len(hoja_mov_rows) < 30: hoja_mov_rows.append([None] * len(pivot_mov_sheet.columns))
+
+        header_31 = ["Directos"] + cols_target + [None, "TOTAL GENERAL"]
+        hoja_mov_rows.append(header_31)
+
+        for concepto in indices_target:
+            vals_c = df_directos.loc[concepto].tolist()
+            row_c = [concepto] + vals_c + [None, sum(vals_c)]
+            hoja_mov_rows.append(row_c)
+
+        total_3_lineas = ["TOTAL"] + df_directos.sum().tolist() + [None, df_directos.sum().sum()]
+        hoja_mov_rows.append(total_3_lineas)
+
+        perc_row_36 = ["%"] + [perc_func_map.get(str(area), 0) for area in cols_target] + [None, 1.0]
+        hoja_mov_rows.append(perc_row_36)
+
+        pivots_finales["TD Movimiento 2026"] = pd.DataFrame(hoja_mov_rows)
+        print("TD Movimiento 2026 actualizada.")
+    except Exception as e:
+        print(f"Error en Parte 12: {e}")
 
     # Guardar
     try:
@@ -234,7 +289,9 @@ def procesar_balance(filepath):
         df_final[col_fecha] = pd.to_datetime(df_final[col_fecha], dayfirst=True).dt.date
         with pd.ExcelWriter(filepath, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
             df_final.to_excel(writer, sheet_name="Procesado", index=False)
-            for name, p_df in pivots_finales.items(): p_df.to_excel(writer, sheet_name=name)
+            for name, p_df in pivots_finales.items():
+                if name == "TD Movimiento 2026": p_df.to_excel(writer, sheet_name=name, index=False, header=False)
+                else: p_df.to_excel(writer, sheet_name=name)
             if df_catalina is not None: df_catalina.to_excel(writer, sheet_name="Catalina Valencia", index=False, header=False)
             if df_funcionarios is not None: df_funcionarios.to_excel(writer, sheet_name="Funcionarios", index=False)
         print("Todos los cambios guardados exitosamente.")
@@ -245,6 +302,6 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v31.xlsx"
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v32.xlsx"
     if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
     else: print("Archivo no encontrado.")

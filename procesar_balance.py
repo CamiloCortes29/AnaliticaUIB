@@ -67,14 +67,19 @@ def procesar_balance(filepath):
 
     col_area = "AREA"
     if col_area in df_principal.columns:
-        df_principal["Area_2"] = df_principal[col_area].astype(str).str[:2]
+        df_principal["Area_2"] = df_principal[col_area].astype(str).str.replace(".0", "", regex=False).str.strip().str[:2]
 
     if df_ccosto is not None:
-        col_ref_cc_id = "Area 2"
-        col_ref_cc_nombre = "Area Informe"
-        if col_ref_cc_id in df_ccosto.columns and col_ref_cc_nombre in df_ccosto.columns:
-            df_ccosto[col_ref_cc_id] = df_ccosto[col_ref_cc_id].astype(str).str.strip()
-            mapeo_ccosto = df_ccosto.set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
+        # Copia para no alterar el original demasiado pronto si hay múltiples usos
+        df_cc_cols = [str(c).upper().strip() for c in df_ccosto.columns]
+        col_ref_cc_id = next((df_ccosto.columns[i] for i, c in enumerate(df_cc_cols) if "AREA 2" in c), df_ccosto.columns[1] if len(df_ccosto.columns)>1 else None)
+        col_ref_cc_nombre = next((df_ccosto.columns[i] for i, c in enumerate(df_cc_cols) if "AREA INFORME" in c), df_ccosto.columns[2] if len(df_ccosto.columns)>2 else None)
+        if col_ref_cc_id and col_ref_cc_nombre:
+            # Limpiar claves de mapeo (quitar .0)
+            df_ccosto[col_ref_cc_id] = df_ccosto[col_ref_cc_id].astype(str).str.replace(".0", "", regex=False).str.strip()
+            mapeo_ccosto = df_ccosto.dropna(subset=[col_ref_cc_id]).set_index(col_ref_cc_id)[col_ref_cc_nombre].to_dict()
+            # Limpiar claves del dict final
+            mapeo_ccosto = {str(k).replace(".0", ""): str(v).replace(".0", "") for k, v in mapeo_ccosto.items() if str(k) != "nan"}
             df_principal["Area_Informe"] = df_principal["Area_2"].map(mapeo_ccosto)
 
     # --- NORMALIZACIÓN DE FECHA ---
@@ -266,6 +271,27 @@ def procesar_balance(filepath):
     # --- BASE_DATA_POWERBI (TABULAR) ---
     df_powerbi = None
     try:
+        # Mapeo de Nombres de Área desde Centro de Costo (Col G y H)
+        mapeo_nombres_area = {}
+        if df_ccosto is not None:
+            df_cc_cols = [str(c).upper().strip() for c in df_ccosto.columns]
+            # Usamos índices si los nombres de columna varían: Col G es index 6, Col H es index 7
+            try:
+                # Intentar por nombres si existen
+                col_g = next((df_ccosto.columns[i] for i, c in enumerate(df_cc_cols) if "COD" in c and "AREA" in c), None)
+                col_h = next((df_ccosto.columns[i] for i, c in enumerate(df_cc_cols) if "NOM" in c and "AREA" in c), None)
+
+                if col_g and col_h:
+                    mapeo_nombres_area = df_ccosto.dropna(subset=[col_g]).set_index(df_ccosto.dropna(subset=[col_g])[col_g].astype(str).str.strip())[col_h].to_dict()
+                else:
+                    # Fallback a posición (G=6, H=7)
+                    mapeo_nombres_area = df_ccosto.dropna(subset=[df_ccosto.columns[6]]).set_index(df_ccosto.dropna(subset=[df_ccosto.columns[6]]).iloc[:, 6].astype(str).str.strip()).iloc[:, 7].to_dict()
+
+                # Limpiar claves de mapeo (quitar .0 de floats si existen)
+                mapeo_nombres_area = {str(k).replace(".0", ""): v for k, v in mapeo_nombres_area.items() if str(k) != "nan"}
+            except Exception as e:
+                print(f"Aviso: No se pudo mapear nombres de área desde Centro de Costo: {e}")
+
         # Listas de clasificación según requerimiento (escalado / 1000)
         lista_ingresos = ["BROKERAGE", "BROKERAGE M", "BROKERAGE S", "FEES", "COMMISSION PAID"]
         lista_staff = ["SALARIES", "BONUS", "OTHER STAFF COSTS"]
@@ -289,9 +315,11 @@ def procesar_balance(filepath):
             else:
                 seccion = "Otros"
 
+            area_cod = str(row["Area_Informe"]).strip()
             tabular_data.append({
                 "Mes": row["Mes Contabilización"] if "Mes Contabilización" in row else None,
-                "Area": row["Area_Informe"],
+                "Area": area_cod,
+                "Nombre Area": mapeo_nombres_area.get(area_cod, "Desconocido"),
                 "Seccion": seccion,
                 "Concepto": inf_l,
                 "Valor": (row[col_saldo] / 1000)
@@ -307,9 +335,11 @@ def procesar_balance(filepath):
             # Distribuir este valor por todas las áreas operativas según Funcionarios
             for area_dest, perc in perc_func_map.items():
                 if str(area_dest) == "100": continue
+                area_dest_s = str(area_dest).strip()
                 tabular_data.append({
                     "Mes": mes_orig,
-                    "Area": area_dest,
+                    "Area": area_dest_s,
+                    "Nombre Area": mapeo_nombres_area.get(area_dest_s, "Desconocido"),
                     "Seccion": "Indirect Costs",
                     "Concepto": inf_l,
                     "Valor": (valor_original * perc) / 1000
@@ -339,6 +369,11 @@ def procesar_balance(filepath):
             df_out = df_final.copy()
             for c in cols_drop:
                 if c in df_out.columns: df_out = df_out.drop(columns=[c])
+
+            # Agregar Nombre de Area a Procesado también si es posible
+            if "Area_Informe" in df_out.columns:
+                df_out["Nombre Area"] = df_out["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip().map(mapeo_nombres_area)
+
             df_out.to_excel(writer, sheet_name="Procesado", index=False)
 
             for name, p_df in pivots_finales.items():

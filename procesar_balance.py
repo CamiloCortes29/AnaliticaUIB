@@ -178,36 +178,32 @@ def procesar_balance(filepath):
     try:
         col_proyecto = "Nombre proyecto"
         if col_proyecto in df_principal.columns and "Area_Informe" in df_principal.columns:
-            # Asegurar consistencia de tipos
             df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
             mask_medellin = (df_principal[col_proyecto].astype(str).str.strip().str.upper() == "MEDELLIN") & (df_principal["Area_Informe"] == "100")
             df_principal.loc[mask_medellin, "Area_Informe"] = "70"
-            print(f"Ajuste Medellín aplicado: {mask_medellin.sum()} registros actualizados de 100 a 70.")
     except Exception as e:
         print(f"Error en ajuste Medellín: {e}")
 
-    # --- OVERRIDE AREA_INFORME = 20 ---
+    # --- OVERRIDE AREA_INFORME = 20 (SOLO PARA UIB SEGUROS) ---
     try:
-        if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns:
+        if "inf. londres" in df_principal.columns and "Area_Informe" in df_principal.columns and "Nombre SN" in df_principal.columns:
             df_principal["Area_Informe"] = df_principal["Area_Informe"].astype(str).str.replace(".0", "", regex=False).str.strip()
-            condicion_override = df_principal["inf. londres"].astype(str).str.strip().str.upper().isin(["COMMISSION PAID", "BROKERAGE S"])
-            df_principal.loc[condicion_override, "Area_Informe"] = "20"
-            print("Override Area_Informe = 20 aplicado.")
+            # Condición refinada: COMMISSION PAID/BROKERAGE S Y Nombre SN == UIB CORREDORES DE SEGUROS S.A.
+            cond_lond = df_principal["inf. londres"].astype(str).str.strip().str.upper().isin(["COMMISSION PAID", "BROKERAGE S"])
+            cond_sn = df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A."
+            df_principal.loc[cond_lond & cond_sn, "Area_Informe"] = "20"
+            print("Override Area_Informe = 20 aplicado únicamente para UIB SEGUROS.")
     except Exception as e:
         print(f"Error en override de Area_Informe: {e}")
 
     # --- TABLAS DINÁMICAS FINALES ---
     pivots_finales = {}
     try:
-        # Asegurar que Area_Informe no sea nan para pivots
         df_principal["Area_Informe"] = df_principal["Area_Informe"].replace("nan", "Desconocido")
-
         df_est_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "ESTRATEGIAS REA S.A.S.")]
         if not df_est_f.empty: pivots_finales["TD Estrategias"] = pd.pivot_table(df_est_f, values=col_saldo, index=["Area_2", "Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-
         df_seg_f = df_principal[(df_principal["inf. londres"].astype(str).str.strip().str.upper() == "COMMISSION PAID") & (df_principal["Nombre SN"].astype(str).str.strip().str.upper() == "UIB CORREDORES DE SEGUROS S.A.")]
         if not df_seg_f.empty: pivots_finales["TD SEGUROS"] = pd.pivot_table(df_seg_f, values=col_saldo, index=["Area_Informe"], columns=["Mes Contabilización"], aggfunc="sum", fill_value=0)
-
         pivot_mov = pd.pivot_table(df_principal, values=col_saldo, index=["inf. londres"], columns=["Area_Informe"], aggfunc="sum", fill_value=0)
         pivot_mov = pivot_mov.reindex(sorted(pivot_mov.columns), axis=1)
         total_mov = pivot_mov.sum().to_frame().T; total_mov.index = ["Total"]; pivot_mov = pd.concat([pivot_mov, total_mov])
@@ -251,6 +247,6 @@ def procesar_balance(filepath):
 
 if __name__ == "__main__":
     ruta_archivo = r"C:\Users\ccortes\UIB COLOMBIA S.A. Corredores de Reaseguros\Analitica Datos - Documentos\Informes área datos\Balance x terceros Ene-Feb P&G Prueba.xlsx"
-    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v27.xlsx"
+    if not os.path.exists(ruta_archivo): ruta_archivo = "Balance_Prueba_v28.xlsx"
     if os.path.exists(ruta_archivo): procesar_balance(ruta_archivo)
     else: print("Archivo no encontrado.")

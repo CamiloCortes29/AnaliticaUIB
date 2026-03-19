@@ -382,7 +382,16 @@ def procesar_balance(filepath):
 
             if df_catalina is not None: df_catalina.to_excel(writer, sheet_name=cat_name, index=False, header=False)
             if df_funcionarios is not None: df_funcionarios.to_excel(writer, sheet_name=func_name, index=False)
-            if df_powerbi is not None: df_powerbi.to_excel(writer, sheet_name="BASE_DATA_POWERBI", index=False)
+            if df_powerbi is not None:
+                df_powerbi.to_excel(writer, sheet_name="BASE_DATA_POWERBI", index=False)
+                # Crear hojas por cada sección solicitada para vistas en PBI
+                df_pbi_bf = df_powerbi[df_powerbi["Seccion"] == "Brokerage & Fees"]
+                df_pbi_dc = df_powerbi[df_powerbi["Seccion"] == "Direct Costs"]
+                df_pbi_ic = df_powerbi[df_powerbi["Seccion"] == "Indirect Costs"]
+
+                if not df_pbi_bf.empty: df_pbi_bf.to_excel(writer, sheet_name="PBI_Brokerage_Fees", index=False)
+                if not df_pbi_dc.empty: df_pbi_dc.to_excel(writer, sheet_name="PBI_Direct_Costs", index=False)
+                if not df_pbi_ic.empty: df_pbi_ic.to_excel(writer, sheet_name="PBI_Indirect_Costs", index=False)
         print("Todos los cambios guardados exitosamente.")
     except Exception as e:
         print(f"Error al guardar: {e}")

@@ -1,5 +1,6 @@
 /* ==========================================================================
-   UIB PRESUPUESTO COMERCIAL 2027 - POWER BI EXECUTIVE THEME
+   UIB PLATAFORMA DE PLANEACIÓN PRESUPUESTAL 2027
+   MICROSOFT CORPORATE & POWER BI EXECUTIVE STYLING
    ========================================================================== */
 
 :root {
@@ -11,68 +12,105 @@
     --uib-warning: #F57E21;
     --uib-danger: #DE2A2B;
     --uib-gray: #888880;
-    --uib-bg: #F4F6F9;
+    --uib-background: #F4F6F9;
+    --uib-sidebar-width: 260px;
     --uib-card-bg: #FFFFFF;
     --uib-border: #E2E8F0;
     --uib-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    --uib-hover-shadow: 0 8px 20px rgba(0, 95, 170, 0.12);
 }
 
 body {
-    background-color: var(--uib-bg);
+    background-color: var(--uib-background);
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     color: var(--uib-dark);
     margin: 0;
-    padding-bottom: 40px;
+    overflow-x: hidden;
 }
 
-/* Navbar / Executive Header */
-.uib-navbar {
+/* Header Top Bar */
+.uib-app-header {
     background: linear-gradient(135deg, var(--uib-dark) 0%, var(--uib-primary) 100%);
     color: white;
-    padding: 1rem 1.5rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    height: 65px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
     border-bottom: 3px solid var(--uib-light);
 }
 
-.uib-logo-badge {
+.uib-brand-logo {
+    height: 38px;
     background: #FFFFFF;
-    color: var(--uib-primary);
-    font-weight: 800;
-    padding: 0.35rem 0.85rem;
+    padding: 4px 8px;
     border-radius: 6px;
-    letter-spacing: 1px;
-    font-size: 1.25rem;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
-.uib-header-title {
-    font-weight: 700;
-    font-size: 1.35rem;
-    margin: 0;
+/* Sidebar Styling */
+.uib-sidebar {
+    width: var(--uib-sidebar-width);
+    background: #FFFFFF;
+    border-right: 1px solid var(--uib-border);
+    position: fixed;
+    top: 65px;
+    bottom: 0;
+    left: 0;
+    z-index: 1030;
+    padding-top: 1rem;
+    overflow-y: auto;
 }
 
-.uib-header-subtitle {
-    font-size: 0.85rem;
-    opacity: 0.85;
-    margin: 0;
+.uib-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    color: var(--uib-dark);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+    border-left: 4px solid transparent;
+    transition: all 0.2s ease-in-out;
 }
 
-/* KPI Dashboard Cards */
+.uib-nav-link:hover, .uib-nav-link.active {
+    background-color: #EBF3FA;
+    color: var(--uib-primary);
+    border-left-color: var(--uib-primary);
+}
+
+.uib-nav-link i {
+    font-size: 1.15rem;
+}
+
+/* Main Content Layout */
+.uib-main-content {
+    margin-left: var(--uib-sidebar-width);
+    margin-top: 65px;
+    padding: 2rem;
+    min-height: calc(100vh - 65px);
+}
+
+/* KPI Card Styles */
 .kpi-card {
     background: var(--uib-card-bg);
     border-radius: 10px;
     border: 1px solid var(--uib-border);
     box-shadow: var(--uib-shadow);
-    padding: 1.2rem;
-    transition: all 0.25s ease-in-out;
+    padding: 1.25rem;
     position: relative;
     overflow: hidden;
+    transition: transform 0.2s;
 }
 
 .kpi-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--uib-hover-shadow);
+    transform: translateY(-2px);
 }
 
 .kpi-card::before {
@@ -85,48 +123,35 @@ body {
 }
 
 .kpi-card.kpi-primary::before { background-color: var(--uib-primary); }
-.kpi-card.kpi-secondary::before { background-color: var(--uib-secondary); }
 .kpi-card.kpi-success::before { background-color: var(--uib-success); }
 .kpi-card.kpi-warning::before { background-color: var(--uib-warning); }
+.kpi-card.kpi-secondary::before { background-color: var(--uib-secondary); }
 
 .kpi-title {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     font-weight: 700;
     color: var(--uib-gray);
     letter-spacing: 0.5px;
-    margin-bottom: 0.4rem;
 }
 
 .kpi-value {
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     font-weight: 800;
     color: var(--uib-dark);
-    margin: 0;
-    line-height: 1.2;
+    margin-top: 0.25rem;
 }
 
 .kpi-icon {
     position: absolute;
-    right: 1.2rem;
-    bottom: 1.2rem;
+    right: 1rem;
+    bottom: 1rem;
     font-size: 2rem;
     opacity: 0.15;
-    color: var(--uib-dark);
 }
 
-/* Control Panel Bar */
-.control-panel-card {
-    background: var(--uib-card-bg);
-    border-radius: 10px;
-    border: 1px solid var(--uib-border);
-    box-shadow: var(--uib-shadow);
-    padding: 1.2rem;
-    margin-bottom: 1.5rem;
-}
-
-/* Power BI Table Styles */
-.pbi-table-container {
+/* Table Power BI Styling */
+.pbi-card-table {
     background: var(--uib-card-bg);
     border-radius: 10px;
     border: 1px solid var(--uib-border);
@@ -136,9 +161,6 @@ body {
 
 .pbi-table {
     margin-bottom: 0;
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
 }
 
 .pbi-table thead th {
@@ -148,20 +170,16 @@ body {
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    padding: 0.85rem 0.75rem;
+    padding: 0.85rem;
     border: none;
     vertical-align: middle;
 }
 
 .pbi-table tbody td {
-    padding: 0.65rem 0.75rem;
+    padding: 0.65rem 0.85rem;
     vertical-align: middle;
     font-size: 0.9rem;
     border-bottom: 1px solid #EEF2F6;
-}
-
-.pbi-table tbody tr:hover {
-    background-color: #F8FAFC;
 }
 
 .pbi-table tfoot td {
@@ -169,134 +187,53 @@ body {
     font-weight: 700;
     color: var(--uib-dark);
     border-top: 2px solid var(--uib-primary);
-    padding: 0.85rem 0.75rem;
+    padding: 0.85rem;
 }
 
-/* Input Fields inside Table */
-.table-input {
-    font-weight: 600;
-    border: 1px solid #CBD5E1;
-    border-radius: 6px;
-    padding: 0.35rem 0.5rem;
-    transition: all 0.2s;
-}
-
-.table-input:focus {
-    border-color: var(--uib-primary);
-    box-shadow: 0 0 0 3px rgba(0, 95, 170, 0.15);
-}
-
-.badge-variation-positive {
-    background-color: #E8F5E9;
-    color: var(--uib-success);
-    font-weight: 700;
-    padding: 0.35rem 0.6rem;
-    border-radius: 6px;
-}
-
-.badge-variation-negative {
-    background-color: #FFEBEE;
-    color: var(--uib-danger);
-    font-weight: 700;
-    padding: 0.35rem 0.6rem;
-    border-radius: 6px;
-}
-
-/* Buttons Styling */
+/* Buttons */
 .btn-uib-primary {
     background-color: var(--uib-primary);
-    border-color: var(--uib-primary);
-    color: #FFFFFF;
+    color: white;
     font-weight: 600;
-    border-radius: 6px;
-    padding: 0.5rem 1.2rem;
-    transition: all 0.2s;
+    border: none;
 }
-
 .btn-uib-primary:hover {
     background-color: #004A85;
-    border-color: #004A85;
-    color: #FFFFFF;
+    color: white;
 }
 
 .btn-uib-success {
     background-color: var(--uib-success);
-    border-color: var(--uib-success);
-    color: #FFFFFF;
+    color: white;
     font-weight: 600;
-    border-radius: 6px;
-    padding: 0.5rem 1.2rem;
+    border: none;
 }
-
 .btn-uib-success:hover {
     background-color: #6EA83A;
-    border-color: #6EA83A;
-    color: #FFFFFF;
+    color: white;
 }
 
-.btn-uib-secondary {
-    background-color: var(--uib-secondary);
-    border-color: var(--uib-secondary);
-    color: #FFFFFF;
-    font-weight: 600;
-    border-radius: 6px;
-}
-
-.btn-uib-secondary:hover {
-    background-color: #27669E;
-    border-color: #27669E;
-    color: #FFFFFF;
-}
-
-.btn-uib-outline {
-    background-color: transparent;
-    border: 1px solid var(--uib-gray);
-    color: var(--uib-dark);
-    font-weight: 600;
-    border-radius: 6px;
-}
-
-.btn-uib-outline:hover {
-    background-color: #E2E8F0;
-    color: var(--uib-dark);
-}
-
-/* Chart Container Cards */
+/* Charts Card */
 .chart-card {
     background: var(--uib-card-bg);
     border-radius: 10px;
     border: 1px solid var(--uib-border);
     box-shadow: var(--uib-shadow);
-    padding: 1.2rem;
-    height: 100%;
+    padding: 1.25rem;
 }
 
-.chart-title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--uib-dark);
-    margin-bottom: 1rem;
+/* Loader Overlay */
+#appLoader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 2000;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-}
-
-.chart-title i {
-    color: var(--uib-primary);
-}
-
-/* Custom Scrollbar for smooth Power BI feel */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-::-webkit-scrollbar-track {
-    background: #F1F1F1;
-}
-::-webkit-scrollbar-thumb {
-    background: #CBD5E1;
-    border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #94A3B8;
+    justify-content: center;
+    transition: opacity 0.3s ease;
 }

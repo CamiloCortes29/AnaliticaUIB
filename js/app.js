@@ -1,37 +1,51 @@
 /**
- * UIB Presupuesto Comercial 2027 - Main Application Controller
- * Connects UI, BudgetDataManager, ExcelService, and Chart.js
+ * UIB Plataforma de Planeación Presupuestal 2027 - Application Controller
  */
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Core State
+    let currentView = "dashboard"; // "dashboard", "brokerage", "legal_professional", etc., "consolidated"
+    let currentArea = "Agricola";
+
     // DOM Elements
+    const userSelector = document.getElementById("userSelector");
     const areaSelector = document.getElementById("areaSelector");
-    const globalIncrementInput = document.getElementById("globalIncrementInput");
-    const budgetTableBody = document.getElementById("budgetTableBody");
-    const budgetTableFoot = document.getElementById("budgetTableFoot");
-    const tableAreaHeader = document.getElementById("tableAreaHeader");
-    const badgeAreaTotals = document.getElementById("badgeAreaTotals");
+    const dashTitleArea = document.getElementById("dashTitleArea");
+    const badgeRoleAccess = document.getElementById("badgeRoleAccess");
 
-    // KPI Elements
-    const kpiTotalExecuted2026 = document.getElementById("kpiTotalExecuted2026");
-    const kpiTotalBudget2027 = document.getElementById("kpiTotalBudget2027");
-    const kpiGrowthAmount = document.getElementById("kpiGrowthAmount");
-    const kpiGrowthPct = document.getElementById("kpiGrowthPct");
+    // Views
+    const viewDashboard = document.getElementById("viewDashboard");
+    const viewModuleCapture = document.getElementById("viewModuleCapture");
+    const viewConsolidated = document.getElementById("viewConsolidated");
 
-    // Buttons & File Input
-    const btnCalculate = document.getElementById("btnCalculate");
+    // Module Elements
+    const moduleTitleName = document.getElementById("moduleTitleName");
+    const moduleTableBody = document.getElementById("moduleTableBody");
+    const moduleTableFoot = document.getElementById("moduleTableFoot");
+
+    // Module KPIs
+    const kpiModRenovation = document.getElementById("kpiModRenovation");
+    const kpiModNewBusiness = document.getElementById("kpiModNewBusiness");
+    const kpiModTotalBudget = document.getElementById("kpiModTotalBudget");
+    const kpiModVariation = document.getElementById("kpiModVariation");
+    const kpiModMonthlyAvg = document.getElementById("kpiModMonthlyAvg");
+
+    // Modals
+    const modalRenewalsDetail = new bootstrap.Modal(document.getElementById("modalRenewalsDetail"));
+    const modalJustification = new bootstrap.Modal(document.getElementById("modalJustification"));
+    const modalJustMonthInput = document.getElementById("modalJustMonth");
+    const modalJustTextInput = document.getElementById("modalJustText");
+    const modalObsTextInput = document.getElementById("modalObsText");
+    const btnSaveJustification = document.getElementById("btnSaveJustification");
+
+    // Action Buttons
+    const btnExportExcel = document.getElementById("btnExportExcel");
+    const btnExportExcelConsolidated = document.getElementById("btnExportExcelConsolidated");
     const btnSaveDraft = document.getElementById("btnSaveDraft");
     const btnReset = document.getElementById("btnReset");
-    const btnExportExcel = document.getElementById("btnExportExcel");
-    const btnImportExcel = document.getElementById("btnImportExcel");
-    const excelFileInput = document.getElementById("excelFileInput");
 
-    // Charts
-    let chartMonthly = null;
-    let chartArea = null;
-
-    // Toast Notification helper
-    function showNotification(msg, type = "primary") {
+    // Notifications Toast
+    function showToast(msg, type = "primary") {
         const toastEl = document.getElementById("uibToast");
         const toastMsg = document.getElementById("toastMessage");
         if (toastEl && toastMsg) {
@@ -42,7 +56,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Number Formatters
     function formatCurrency(val) {
         return new Intl.NumberFormat('es-CO', {
             style: 'currency',
@@ -51,73 +64,98 @@ document.addEventListener("DOMContentLoaded", () => {
         }).format(val || 0);
     }
 
-    function formatPct(val) {
-        const num = parseFloat(val) || 0;
-        const sign = num > 0 ? '+' : '';
-        return `${sign}${num.toFixed(1)}%`;
+    // Initialize Auth & Users Selector
+    function initUserSelector() {
+        userSelector.innerHTML = "";
+        UIB_USERS.forEach(u => {
+            const opt = document.createElement("option");
+            opt.value = u.id;
+            opt.textContent = u.name;
+            userSelector.appendChild(opt);
+        });
+
+        // Load Saved Local Draft if any
+        if (window.planningDataManager.loadFromLocalStorage()) {
+            showToast("Se cargó un borrador de presupuesto guardado localmente.", "info");
+        }
+
+        userSelector.value = window.authManager.getCurrentUser().id;
+        refreshAreaSelector();
     }
 
-    // Initialize UI Selectors
-    function initSelectors() {
+    // Refresh Area Selector based on Role/User Permissions
+    function refreshAreaSelector() {
         areaSelector.innerHTML = "";
-        AREAS_LIST.forEach(area => {
+        const allowed = window.authManager.getAvailableAreas();
+
+        // If Admin, also allow "CORPORATIVO" option in Dashboard
+        if (window.authManager.isAdmin()) {
+            const corpOpt = document.createElement("option");
+            corpOpt.value = "CORPORATIVO";
+            corpOpt.textContent = "CONSOLIDADO CORPORATIVO";
+            areaSelector.appendChild(corpOpt);
+        }
+
+        allowed.forEach(a => {
             const opt = document.createElement("option");
-            opt.value = area;
-            opt.textContent = area;
+            opt.value = a;
+            opt.textContent = a;
             areaSelector.appendChild(opt);
         });
 
-        // Load draft if available
-        const loaded = window.budgetManager.loadFromLocalStorage();
-        if (loaded) {
-            showNotification("Se ha cargado un borrador guardado anteriormente.", "info");
+        // Default area
+        if (allowed.length > 0) {
+            currentArea = allowed[0];
+            areaSelector.value = currentArea;
         }
 
-        areaSelector.value = window.budgetManager.currentArea;
-        globalIncrementInput.value = window.budgetManager.globalIncrementPct;
+        badgeRoleAccess.textContent = `Acceso: ${window.authManager.getCurrentUser().role}`;
     }
 
-    // Update Dashboard Cards
-    function renderDashboardKPIs() {
-        const totals = window.budgetManager.getCompanyTotals();
+    // Render Navigation & Views
+    function switchView(viewName) {
+        currentView = viewName;
 
-        kpiTotalExecuted2026.textContent = formatCurrency(totals.totalExecuted2026);
-        kpiTotalBudget2027.textContent = formatCurrency(totals.totalBudget2027);
+        // Update nav active classes
+        document.querySelectorAll(".uib-nav-link").forEach(link => {
+            if (link.getAttribute("data-view") === viewName) {
+                link.classList.add("active");
+            } else {
+                link.classList.remove("active");
+            }
+        });
 
-        kpiGrowthAmount.textContent = formatCurrency(totals.variationAmount);
-        if (totals.variationAmount < 0) {
-            kpiGrowthAmount.className = "kpi-value text-danger";
+        // Hide all views
+        viewDashboard.classList.add("d-none");
+        viewModuleCapture.classList.add("d-none");
+        viewConsolidated.classList.add("d-none");
+
+        if (viewName === "dashboard") {
+            viewDashboard.classList.remove("d-none");
+            dashTitleArea.textContent = `Dashboard Ejecutivo - ${currentArea}`;
+            window.dashboardController.renderDashboard(currentArea, window.planningDataManager);
+        } else if (viewName === "consolidated") {
+            viewConsolidated.classList.remove("d-none");
+            renderConsolidatedView();
         } else {
-            kpiGrowthAmount.className = "kpi-value text-success";
-        }
-
-        kpiGrowthPct.textContent = formatPct(totals.variationPct);
-        if (totals.variationPct < 0) {
-            kpiGrowthPct.className = "kpi-value text-danger";
-        } else {
-            kpiGrowthPct.className = "kpi-value text-success";
+            viewModuleCapture.classList.remove("d-none");
+            const modObj = UIB_MODULES.find(m => m.id === viewName);
+            if (modObj) {
+                moduleTitleName.textContent = `${modObj.name} - ${currentArea}`;
+                renderModuleTable(modObj.id);
+            }
         }
     }
 
-    // Render Main Budget Table for Current Area
-    function renderTable() {
-        const currentArea = areaSelector.value;
-        window.budgetManager.currentArea = currentArea;
-        tableAreaHeader.textContent = `Presupuesto - ${currentArea}`;
+    // Render Module Worktable
+    function renderModuleTable(moduleId) {
+        const area = currentArea === 'CORPORATIVO' ? UIB_AREAS[0] : currentArea;
+        const monthsData = window.planningDataManager.budgetData[area]?.[moduleId] || {};
 
-        const areaData = window.budgetManager.data[currentArea] || {};
-        budgetTableBody.innerHTML = "";
+        moduleTableBody.innerHTML = "";
 
-        MONTHS_LIST.forEach(month => {
-            const mData = areaData[month] || {
-                executed2026: 0,
-                suggestedIncrementPct: window.budgetManager.globalIncrementPct,
-                budget2027: 0,
-                variationAmount: 0,
-                variationPct: 0,
-                justification: ""
-            };
-
+        MONTHS.forEach(month => {
+            const entry = monthsData[month] || { renovation: 0, newBusiness: 0, totalBudget: 0, justification: "", observations: "" };
             const tr = document.createElement("tr");
 
             // Month Label
@@ -126,261 +164,242 @@ document.addEventListener("DOMContentLoaded", () => {
             tdMonth.textContent = month;
             tr.appendChild(tdMonth);
 
-            // Executed 2026
-            const tdExec = document.createElement("td");
-            tdExec.className = "text-end font-monospace fw-semibold text-secondary";
-            tdExec.textContent = formatCurrency(mData.executed2026);
-            tr.appendChild(tdExec);
+            // Renewal Amount
+            const tdRenov = document.createElement("td");
+            tdRenov.className = "text-end font-monospace fw-semibold text-secondary";
+            tdRenov.textContent = formatCurrency(entry.renovation);
+            tr.appendChild(tdRenov);
 
-            // % Increment Suggested
-            const tdIncPct = document.createElement("td");
-            tdIncPct.className = "text-center";
-            const inputInc = document.createElement("input");
-            inputInc.type = "number";
-            inputInc.step = "0.5";
-            inputInc.className = "form-control form-control-sm text-center table-input";
-            inputInc.value = mData.suggestedIncrementPct;
-            inputInc.addEventListener("change", (e) => {
-                window.budgetManager.updateMonthIncrementPct(currentArea, month, e.target.value);
-                updateAllViews();
+            // New Business (Editable Input)
+            const tdNew = document.createElement("td");
+            tdNew.className = "text-end";
+            const inputNew = document.createElement("input");
+            inputNew.type = "number";
+            inputNew.step = "500000";
+            inputNew.className = "form-control form-control-sm text-end fw-bold text-success table-input";
+            inputNew.value = entry.newBusiness;
+            inputNew.addEventListener("input", (e) => {
+                window.planningDataManager.updateNewBusiness(area, moduleId, month, e.target.value);
+                updateModuleKPIsAndTableFoot(moduleId);
             });
-            tdIncPct.appendChild(inputInc);
-            tr.appendChild(tdIncPct);
+            tdNew.appendChild(inputNew);
+            tr.appendChild(tdNew);
 
-            // Budget 2027 (Editable Number Input)
-            const tdBudget = document.createElement("td");
-            tdBudget.className = "text-end";
-            const inputBudget = document.createElement("input");
-            inputBudget.type = "number";
-            inputBudget.step = "100000";
-            inputBudget.className = "form-control form-control-sm text-end fw-bold table-input";
-            inputBudget.style.color = "var(--uib-primary)";
-            inputBudget.value = mData.budget2027;
-            inputBudget.addEventListener("input", (e) => {
-                window.budgetManager.updateMonthBudget(currentArea, month, e.target.value);
-                updateAllViews();
-            });
-            tdBudget.appendChild(inputBudget);
-            tr.appendChild(tdBudget);
+            // Total Budget
+            const tdTotal = document.createElement("td");
+            tdTotal.className = "text-end font-monospace fw-bold text-primary fs-6";
+            tdTotal.id = `total_cell_${month}`;
+            tdTotal.textContent = formatCurrency(entry.totalBudget);
+            tr.appendChild(tdTotal);
 
-            // Variation Amount $
-            const tdVarAmt = document.createElement("td");
-            tdVarAmt.className = `text-end font-monospace fw-bold ${mData.variationAmount >= 0 ? "text-success" : "text-danger"}`;
-            tdVarAmt.textContent = formatCurrency(mData.variationAmount);
-            tr.appendChild(tdVarAmt);
+            // Traceability / Renewals Detail Button
+            const tdTrace = document.createElement("td");
+            tdTrace.className = "text-center";
+            if (moduleId === 'brokerage') {
+                const btnDetail = document.createElement("button");
+                btnDetail.className = "btn btn-outline-primary btn-sm px-2 py-0";
+                btnDetail.innerHTML = `<i class="bi bi-search me-1"></i>Ver Detalle`;
+                btnDetail.addEventListener("click", () => {
+                    openRenewalsModal(area, month);
+                });
+                tdTrace.appendChild(btnDetail);
+            } else {
+                tdTrace.innerHTML = `<span class="badge bg-light text-muted border">Costo Base</span>`;
+            }
+            tr.appendChild(tdTrace);
 
-            // Variation %
-            const tdVarPct = document.createElement("td");
-            tdVarPct.className = "text-center";
-            const badgeClass = mData.variationPct >= 0 ? "badge-variation-positive" : "badge-variation-negative";
-            tdVarPct.innerHTML = `<span class="${badgeClass}">${formatPct(mData.variationPct)}</span>`;
-            tr.appendChild(tdVarPct);
-
-            // Justification Text Input
+            // Justification Button
             const tdJust = document.createElement("td");
-            const inputJust = document.createElement("input");
-            inputJust.type = "text";
-            inputJust.className = "form-control form-control-sm table-input";
-            inputJust.placeholder = "Añadir justificación...";
-            inputJust.value = mData.justification || "";
-            inputJust.addEventListener("change", (e) => {
-                window.budgetManager.updateMonthJustification(currentArea, month, e.target.value);
+            tdJust.className = "text-center";
+            const btnJust = document.createElement("button");
+            btnJust.className = `btn btn-sm ${entry.justification ? 'btn-warning' : 'btn-outline-secondary'} px-2 py-0`;
+            btnJust.title = entry.justification || "Agregar Observación";
+            btnJust.innerHTML = `<i class="bi bi-pencil-square"></i>`;
+            btnJust.addEventListener("click", () => {
+                openJustificationModal(area, moduleId, month, entry);
             });
-            tdJust.appendChild(inputJust);
+            tdJust.appendChild(btnJust);
             tr.appendChild(tdJust);
 
-            budgetTableBody.appendChild(tr);
+            moduleTableBody.appendChild(tr);
         });
 
-        // Render Foot Totals for Current Area
-        const areaTotals = window.budgetManager.getAreaTotals(currentArea);
-        budgetTableFoot.innerHTML = "";
-        const footTr = document.createElement("tr");
+        updateModuleKPIsAndTableFoot(moduleId);
+    }
 
-        footTr.innerHTML = `
-            <td class="fw-bold text-uppercase">TOTAL ${currentArea.toUpperCase()}</td>
-            <td class="text-end font-monospace fw-bold fs-6">${formatCurrency(areaTotals.totalExecuted2026)}</td>
-            <td class="text-center text-muted">-</td>
-            <td class="text-end font-monospace fw-bold fs-6" style="color: var(--uib-primary);">${formatCurrency(areaTotals.totalBudget2027)}</td>
-            <td class="text-end font-monospace fw-bold fs-6 ${areaTotals.variationAmount >= 0 ? "text-success" : "text-danger"}">${formatCurrency(areaTotals.variationAmount)}</td>
-            <td class="text-center"><span class="${areaTotals.variationPct >= 0 ? "badge-variation-positive" : "badge-variation-negative"} fs-6">${formatPct(areaTotals.variationPct)}</span></td>
-            <td></td>
+    function updateModuleKPIsAndTableFoot(moduleId) {
+        const area = currentArea === 'CORPORATIVO' ? UIB_AREAS[0] : currentArea;
+        const kpis = window.planningDataManager.getModuleKPIs(area, moduleId);
+
+        kpiModRenovation.textContent = formatCurrency(kpis.totalRenovation);
+        kpiModNewBusiness.textContent = formatCurrency(kpis.totalNewBusiness);
+        kpiModTotalBudget.textContent = formatCurrency(kpis.totalBudget);
+        kpiModVariation.textContent = `${formatCurrency(kpis.variationAmount)} (${kpis.variationPct.toFixed(1)}%)`;
+        kpiModMonthlyAvg.textContent = formatCurrency(kpis.monthlyAverage);
+
+        // Update table cells for totals
+        MONTHS.forEach(m => {
+            const totalCell = document.getElementById(`total_cell_${m}`);
+            if (totalCell) {
+                const entry = window.planningDataManager.budgetData[area]?.[moduleId]?.[m];
+                if (entry) totalCell.textContent = formatCurrency(entry.totalBudget);
+            }
+        });
+
+        // Foot Totals
+        moduleTableFoot.innerHTML = `
+            <tr>
+                <td class="fw-bold text-uppercase">TOTAL ANUAL 2027</td>
+                <td class="text-end font-monospace fw-bold fs-6">${formatCurrency(kpis.totalRenovation)}</td>
+                <td class="text-end font-monospace fw-bold fs-6 text-success">${formatCurrency(kpis.totalNewBusiness)}</td>
+                <td class="text-end font-monospace fw-bold fs-6 text-primary">${formatCurrency(kpis.totalBudget)}</td>
+                <td colspan="2" class="text-center text-muted small">Promedio: ${formatCurrency(kpis.monthlyAverage)} / mes</td>
+            </tr>
         `;
-        budgetTableFoot.appendChild(footTr);
-
-        badgeAreaTotals.textContent = `Ejecutado: ${formatCurrency(areaTotals.totalExecuted2026)} | Presupuesto: ${formatCurrency(areaTotals.totalBudget2027)}`;
     }
 
-    // Render Chart.js Analytics
-    function renderCharts() {
-        const currentArea = areaSelector.value;
-        const areaData = window.budgetManager.data[currentArea] || {};
+    // Modal: Ver Detalle Renovaciones
+    function openRenewalsModal(area, month) {
+        const policies = window.planningDataManager.getMonthlyRenewalPolicies(area, month);
+        const tbody = document.getElementById("modalRenewalsTableBody");
+        const totalEl = document.getElementById("modalRenewalsTotal");
+        document.getElementById("modalRenewalsLabel").textContent = `Detalle de Renovaciones Pólizas - ${month} 2027 (${area})`;
 
-        const executedSeries = MONTHS_LIST.map(m => areaData[m] ? areaData[m].executed2026 : 0);
-        const budgetSeries = MONTHS_LIST.map(m => areaData[m] ? areaData[m].budget2027 : 0);
+        tbody.innerHTML = "";
+        let totalCom = 0;
 
-        // 1. Monthly Comparison Chart (Bar)
-        const ctxMonthly = document.getElementById("chartMonthlyComparison").getContext("2d");
-        document.getElementById("chartMonthlyTitle").textContent = `Comparativo Mensual 2026 vs 2027 - ${currentArea}`;
-
-        if (chartMonthly) chartMonthly.destroy();
-
-        chartMonthly = new Chart(ctxMonthly, {
-            type: 'bar',
-            data: {
-                labels: MONTHS_LIST.map(m => m.substring(0, 3)),
-                datasets: [
-                    {
-                        label: 'Ejecutado 2026',
-                        data: executedSeries,
-                        backgroundColor: '#888880',
-                        borderRadius: 4
-                    },
-                    {
-                        label: 'Presupuesto 2027',
-                        data: budgetSeries,
-                        backgroundColor: '#005FAA',
-                        borderRadius: 4
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top' },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.dataset.label}: ${formatCurrency(context.raw)}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + (value / 1000000).toFixed(0) + 'M';
-                            }
-                        }
-                    }
-                }
-            }
+        policies.forEach(p => {
+            totalCom += p.commission;
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td class="fw-bold text-dark">${p.client}</td>
+                <td>${p.product}</td>
+                <td class="text-end font-monospace">${formatCurrency(p.premium)}</td>
+                <td class="text-end font-monospace fw-bold text-primary">${formatCurrency(p.commission)}</td>
+                <td class="text-center font-monospace small">${p.endDate}</td>
+            `;
+            tbody.appendChild(tr);
         });
 
-        // 2. Area Distribution Chart (Doughnut)
-        const areaLabels = AREAS_LIST;
-        const areaBudgetTotals = AREAS_LIST.map(a => window.budgetManager.getAreaTotals(a).totalBudget2027);
+        if (policies.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">No hay pólizas registradas para renovar en este mes.</td></tr>`;
+        }
 
-        const ctxArea = document.getElementById("chartAreaDistribution").getContext("2d");
-        if (chartArea) chartArea.destroy();
+        totalEl.textContent = formatCurrency(totalCom);
+        modalRenewalsDetail.show();
+    }
 
-        chartArea = new Chart(ctxArea, {
-            type: 'doughnut',
-            data: {
-                labels: areaLabels,
-                datasets: [{
-                    data: areaBudgetTotals,
-                    backgroundColor: [
-                        '#005FAA', '#327FC2', '#04A0D9', '#23496D',
-                        '#84C44C', '#F57E21', '#DE2A2B', '#6C52A2', '#888880'
-                    ],
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: { boxWidth: 12, font: { size: 10 } }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.label}: ${formatCurrency(context.raw)}`;
-                            }
-                        }
-                    }
-                }
-            }
+    // Modal: Justificaciones
+    function openJustificationModal(area, moduleId, month, entry) {
+        modalJustMonthInput.value = month;
+        modalJustTextInput.value = entry.justification || "";
+        modalObsTextInput.value = entry.observations || "";
+        modalJustification.show();
+    }
+
+    btnSaveJustification.addEventListener("click", () => {
+        const month = modalJustMonthInput.value;
+        const area = currentArea === 'CORPORATIVO' ? UIB_AREAS[0] : currentArea;
+        window.planningDataManager.updateJustification(area, currentView, month, modalJustTextInput.value, modalObsTextInput.value);
+        modalJustification.hide();
+        renderModuleTable(currentView);
+        showToast(`Justificación guardada para ${month}.`, "success");
+    });
+
+    // Render Consolidated View
+    function renderConsolidatedView() {
+        const container = document.getElementById("consolidatedCardsContainer");
+        const area = currentArea === 'CORPORATIVO' ? UIB_AREAS[0] : currentArea;
+
+        container.innerHTML = "";
+
+        UIB_MODULES.forEach(mod => {
+            const kpis = window.planningDataManager.getModuleKPIs(area, mod.id);
+            const col = document.createElement("div");
+            col.className = "col-12 col-xl-6";
+
+            col.innerHTML = `
+                <div class="pbi-card-table p-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h3 class="h6 font-weight-bold mb-0 text-primary">${mod.name.toUpperCase()}</h3>
+                        <span class="badge bg-primary fs-6">${formatCurrency(kpis.totalBudget)}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm pbi-table">
+                            <thead>
+                                <tr>
+                                    <th>Total Renovación</th>
+                                    <th>Total Negocio Nuevo</th>
+                                    <th>Presupuesto Total</th>
+                                    <th>Variación %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="font-monospace">${formatCurrency(kpis.totalRenovation)}</td>
+                                    <td class="font-monospace text-success">${formatCurrency(kpis.totalNewBusiness)}</td>
+                                    <td class="font-monospace fw-bold text-primary">${formatCurrency(kpis.totalBudget)}</td>
+                                    <td class="font-monospace fw-bold">${kpis.variationPct.toFixed(1)}%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            container.appendChild(col);
         });
     }
 
-    // Refresh all views
-    function updateAllViews() {
-        renderDashboardKPIs();
-        renderTable();
-        renderCharts();
-    }
-
-    // Event Listeners
-    areaSelector.addEventListener("change", () => {
-        updateAllViews();
+    // Event Handlers
+    userSelector.addEventListener("change", (e) => {
+        window.authManager.setCurrentUserById(e.target.value);
+        refreshAreaSelector();
+        switchView(currentView);
+        showToast(`Usuario cambiado a ${window.authManager.getCurrentUser().name}.`, "info");
     });
 
-    globalIncrementInput.addEventListener("change", (e) => {
-        const pct = e.target.value;
-        window.budgetManager.setGlobalIncrement(pct);
-        updateAllViews();
-        showNotification(`Incremento sugerido actualizado a ${pct}% en todas las áreas.`, "primary");
+    areaSelector.addEventListener("change", (e) => {
+        currentArea = e.target.value;
+        switchView(currentView);
     });
 
-    btnCalculate.addEventListener("click", () => {
-        window.budgetManager.recalculateAll();
-        updateAllViews();
-        showNotification("Cálculos y variaciones actualizados correctamente.", "success");
+    document.querySelectorAll(".uib-nav-link").forEach(link => {
+        link.addEventListener("click", (e) => {
+            e.preventDefault();
+            const viewTarget = link.getAttribute("data-view");
+            switchView(viewTarget);
+        });
     });
 
     btnSaveDraft.addEventListener("click", () => {
-        window.budgetManager.saveToLocalStorage();
-        showNotification("Borrador de presupuesto guardado exitosamente.", "success");
+        window.planningDataManager.saveToLocalStorage();
+        showToast("Borrador del presupuesto guardado localmente.", "success");
     });
 
     btnReset.addEventListener("click", () => {
-        if (confirm("¿Está seguro de reiniciar todos los datos al estado original? Se perderán las modificaciones no guardadas.")) {
-            window.budgetManager.reset();
-            initSelectors();
-            updateAllViews();
-            showNotification("El presupuesto ha sido restablecido a los valores iniciales.", "warning");
+        if (confirm("¿Desea reiniciar todos los datos presupuestales a los valores iniciales?")) {
+            window.planningDataManager.reset();
+            switchView(currentView);
+            showToast("Presupuesto restablecido.", "warning");
         }
     });
 
-    btnExportExcel.addEventListener("click", async () => {
+    const triggerExcelExport = async () => {
+        const areaToExport = currentArea === 'CORPORATIVO' ? UIB_AREAS[0] : currentArea;
         try {
-            showNotification("Generando archivo Excel profesional...", "info");
-            await window.excelService.exportToExcel(window.budgetManager);
-            showNotification("Archivo Excel descargado con éxito.", "success");
+            showToast(`Generando archivo Excel de 8 hojas para ${areaToExport}...`, "info");
+            await window.excelService.exportBudgetToExcel(areaToExport, window.planningDataManager);
+            showToast("Archivo Excel descargado exitosamente.", "success");
         } catch (e) {
-            console.error("Error al exportar a Excel:", e);
-            showNotification("Ocurrió un error al generar el archivo Excel.", "danger");
+            console.error("Error exportando a Excel:", e);
+            showToast("Error generando el archivo Excel.", "danger");
         }
-    });
+    };
 
-    btnImportExcel.addEventListener("click", () => {
-        excelFileInput.click();
-    });
+    btnExportExcel.addEventListener("click", triggerExcelExport);
+    btnExportExcelConsolidated.addEventListener("click", triggerExcelExport);
 
-    excelFileInput.addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        try {
-            showNotification("Procesando archivo de ejecución 2026...", "info");
-            const count = await window.excelService.importFromExcel(file, window.budgetManager);
-            updateAllViews();
-            showNotification(`Se cargaron ${count} registros de ejecución exitosamente desde el archivo Excel.`, "success");
-        } catch (err) {
-            console.error("Error importando Excel:", err);
-            showNotification(`Error al procesar el archivo Excel: ${err.message}`, "danger");
-        } finally {
-            excelFileInput.value = "";
-        }
-    });
-
-    // Initial Load Execution
-    initSelectors();
-    updateAllViews();
+    // Initial Setup
+    initUserSelector();
+    switchView("dashboard");
 });

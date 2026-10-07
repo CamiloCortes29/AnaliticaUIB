@@ -17,19 +17,30 @@ window.dashboardController = {
 
     renderDashboard: function(area, dataMgr) {
         const isCorporate = area === 'CORPORATIVO';
-        const summary = isCorporate
-            ? dataMgr.getCorporateConsolidatedSummary()
-            : dataMgr.getAreaDashboardSummary(area);
+        let summary;
 
-        // Update KPI Cards
-        document.getElementById("kpiDashTotalBudget").textContent = this.formatCurrency(summary.brokerageRevenue || summary.totalBrokerage);
-        document.getElementById("kpiDashRenovations").textContent = this.formatCurrency(summary.totalRenovations);
-        document.getElementById("kpiDashNewBusiness").textContent = this.formatCurrency(summary.totalNewBusiness);
+        if (isCorporate) {
+            const corp = dataMgr.getCorporateConsolidatedSummary();
+            summary = {
+                totalBrokerage: corp.totalBrokerage,
+                renovations: corp.totalRenovations,
+                newBusiness: corp.totalNewBusiness,
+                totalExpenses: corp.totalExpenses,
+                netBudget: corp.totalBrokerage - corp.totalExpenses
+            };
+        } else {
+            summary = dataMgr.getAreaSummary(area);
+        }
+
+        // Update Dashboard KPIs
+        document.getElementById("kpiDashTotalBudget").textContent = this.formatCurrency(summary.totalBrokerage);
+        document.getElementById("kpiDashRenovations").textContent = this.formatCurrency(summary.renovations);
+        document.getElementById("kpiDashNewBusiness").textContent = this.formatCurrency(summary.newBusiness);
         document.getElementById("kpiDashTotalExpenses").textContent = this.formatCurrency(summary.totalExpenses);
 
-        const complianceEl = document.getElementById("kpiDashCompliance");
-        complianceEl.textContent = `${(summary.compliancePct || 100).toFixed(1)}%`;
-        complianceEl.className = summary.compliancePct >= 100 ? "kpi-value text-success" : "kpi-value text-warning";
+        const netEl = document.getElementById("kpiDashCompliance");
+        netEl.textContent = this.formatCurrency(summary.netBudget);
+        netEl.className = summary.netBudget >= 0 ? "kpi-value text-success" : "kpi-value text-danger";
 
         // Render Charts
         this.renderCompositionChart(area, dataMgr);
@@ -49,9 +60,9 @@ window.dashboardController = {
             renov = corp.totalRenovations;
             newBiz = corp.totalNewBusiness;
         } else {
-            const kpis = dataMgr.getModuleKPIs(area, 'brokerage');
-            renov = kpis.totalRenovation;
-            newBiz = kpis.totalNewBusiness;
+            const brokKpis = dataMgr.getBrokerageKPIs(area);
+            renov = brokKpis.totalRenovation;
+            newBiz = brokKpis.totalNewBusiness;
         }
 
         this.chartComposition = new Chart(ctx, {
@@ -85,16 +96,16 @@ window.dashboardController = {
 
         const renovSeries = MONTHS.map(m => {
             if (area === 'CORPORATIVO') {
-                return UIB_AREAS.reduce((s, a) => s + (dataMgr.budgetData[a]?.brokerage?.[m]?.renovation || 0), 0);
+                return UIB_AREAS.reduce((sum, a) => sum + (dataMgr.budgetData[a]?.brokerage?.[m]?.renovation2026 || 0), 0);
             }
-            return dataMgr.budgetData[area]?.brokerage?.[m]?.renovation || 0;
+            return dataMgr.budgetData[area]?.brokerage?.[m]?.renovation2026 || 0;
         });
 
         const newBizSeries = MONTHS.map(m => {
             if (area === 'CORPORATIVO') {
-                return UIB_AREAS.reduce((s, a) => s + (dataMgr.budgetData[a]?.brokerage?.[m]?.newBusiness || 0), 0);
+                return UIB_AREAS.reduce((sum, a) => sum + (dataMgr.budgetData[a]?.brokerage?.[m]?.newBusiness2027 || 0), 0);
             }
-            return dataMgr.budgetData[area]?.brokerage?.[m]?.newBusiness || 0;
+            return dataMgr.budgetData[area]?.brokerage?.[m]?.newBusiness2027 || 0;
         });
 
         this.chartTrend = new Chart(ctx, {
@@ -144,13 +155,31 @@ window.dashboardController = {
         const ctx = document.getElementById("chartDashModules").getContext("2d");
         if (this.chartModules) this.chartModules.destroy();
 
-        const labels = UIB_MODULES.map(m => m.name);
-        const dataValues = UIB_MODULES.map(mod => {
-            if (area === 'CORPORATIVO') {
-                return UIB_AREAS.reduce((sum, a) => sum + dataMgr.getModuleKPIs(a, mod.id).totalBudget, 0);
-            }
-            return dataMgr.getModuleKPIs(area, mod.id).totalBudget;
-        });
+        let labels = [];
+        let dataValues = [];
+        let bgColors = [];
+
+        if (area === 'CORPORATIVO') {
+            // Display distribution across all 9 areas for Admin
+            labels = UIB_AREAS;
+            dataValues = UIB_AREAS.map(a => dataMgr.getAreaSummary(a).totalBrokerage);
+            bgColors = [
+                '#005FAA', '#327FC2', '#04A0D9', '#23496D',
+                '#84C44C', '#F57E21', '#DE2A2B', '#6C52A2', '#888880'
+            ];
+        } else {
+            // Display distribution across financial criteria for the area
+            const summary = dataMgr.getAreaSummary(area);
+            labels = ['Brokerage', 'Legal & Professional', 'Producer Costs', 'Training', 'Travel'];
+            dataValues = [
+                summary.totalBrokerage,
+                summary.legalProfessional,
+                summary.producerCosts,
+                summary.training,
+                summary.travel
+            ];
+            bgColors = ['#005FAA', '#327FC2', '#04A0D9', '#23496D', '#F57E21'];
+        }
 
         this.chartModules = new Chart(ctx, {
             type: 'pie',
@@ -158,7 +187,7 @@ window.dashboardController = {
                 labels: labels,
                 datasets: [{
                     data: dataValues,
-                    backgroundColor: ['#005FAA', '#327FC2', '#04A0D9', '#23496D', '#F57E21'],
+                    backgroundColor: bgColors,
                     borderWidth: 2
                 }]
             },

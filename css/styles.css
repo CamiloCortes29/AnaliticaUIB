@@ -29,9 +29,10 @@ body {
 
 /* Header Top Bar */
 .uib-app-header {
-    background: linear-gradient(135deg, var(--uib-dark) 0%, var(--uib-primary) 100%);
+    background-color: var(--uib-primary) !important;
+    background: #005FAA !important;
     color: white;
-    height: 65px;
+    height: 70px;
     position: fixed;
     top: 0;
     left: 0;
@@ -41,15 +42,37 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 0 1.5rem;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     border-bottom: 3px solid var(--uib-light);
 }
 
 .uib-brand-logo {
-    height: 38px;
-    background: #FFFFFF;
-    padding: 4px 8px;
-    border-radius: 6px;
+    height: 40px;
+    background: transparent;
+    padding: 2px;
+    filter: brightness(0) invert(1); /* Ensure white logo visibility over corporate blue header */
+}
+
+/* Header Dropdown Controls Fix */
+.uib-header-control {
+    background-color: #FFFFFF !important;
+    color: var(--uib-dark) !important;
+    border: 1px solid var(--uib-border) !important;
+    border-radius: 6px !important;
+    padding: 0.35rem 0.75rem !important;
+    font-weight: 600 !important;
+}
+
+.uib-header-control select,
+select.form-select {
+    background-color: #FFFFFF !important;
+    color: #23496D !important;
+    font-weight: 600 !important;
+}
+
+select.form-select option {
+    background-color: #FFFFFF !important;
+    color: #23496D !important;
 }
 
 /* Sidebar Styling */
@@ -58,7 +81,7 @@ body {
     background: #FFFFFF;
     border-right: 1px solid var(--uib-border);
     position: fixed;
-    top: 65px;
+    top: 70px;
     bottom: 0;
     left: 0;
     z-index: 1030;
@@ -92,9 +115,9 @@ body {
 /* Main Content Layout */
 .uib-main-content {
     margin-left: var(--uib-sidebar-width);
-    margin-top: 65px;
+    margin-top: 70px;
     padding: 2rem;
-    min-height: calc(100vh - 65px);
+    min-height: calc(100vh - 70px);
 }
 
 /* KPI Card Styles */
@@ -188,6 +211,22 @@ body {
     color: var(--uib-dark);
     border-top: 2px solid var(--uib-primary);
     padding: 0.85rem;
+}
+
+/* Input Fields inside Table */
+.table-input {
+    background-color: #FFFFFF !important;
+    color: #23496D !important;
+    font-weight: 600;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    transition: all 0.2s;
+}
+
+.table-input:focus {
+    border-color: var(--uib-primary);
+    box-shadow: 0 0 0 3px rgba(0, 95, 170, 0.15);
 }
 
 /* Buttons */

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plataforma de Planeación Presupuestal UIB 2027</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="css/styles.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Loader Overlay -->
+    <div id="appLoader" class="d-none">
+        <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+        <div class="fw-bold text-dark fs-5">Cargando Plataforma Presupuestal...</div>
+    </div>
+
+    <!-- Top App Header Bar (#005FAA Background) -->
+    <header class="uib-app-header">
+        <div class="d-flex align-items-center gap-3">
+            <img src="assets/logo.png" alt="UIB Corredores de Seguros" class="uib-brand-logo">
+            <div>
+                <h1 class="h5 font-weight-bold mb-0 text-white">PLATAFORMA DE PLANEACIÓN PRESUPUESTAL 2027</h1>
+                <small class="text-white-50">UIB Corredores de Seguros S.A. | Planeación Financiera</small>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+            <!-- User / Role Switcher -->
+            <div class="d-flex align-items-center gap-2 uib-header-control">
+                <i class="bi bi-person-badge-fill text-primary fs-5"></i>
+                <div>
+                    <div class="small text-muted lh-1" style="font-size: 0.7rem;">Usuario / Rol</div>
+                    <select id="userSelector" class="form-select form-select-sm border-0 fw-bold p-0" style="cursor: pointer;">
+                        <!-- Options generated in auth.js -->
+                    </select>
+                </div>
+            </div>
+
+            <!-- Area Selector -->
+            <div class="d-flex align-items-center gap-2 uib-header-control">
+                <i class="bi bi-diagram-3-fill text-primary fs-5"></i>
+                <div>
+                    <div class="small text-muted lh-1" style="font-size: 0.7rem;">Área / Línea de Negocio</div>
+                    <select id="areaSelector" class="form-select form-select-sm border-0 fw-bold p-0" style="cursor: pointer;">
+                        <!-- Options populated via JS -->
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Collateral Side Menu Navigation -->
+    <aside class="uib-sidebar">
+        <div class="px-3 mb-2 small font-weight-bold text-uppercase text-muted">Módulos Presupuestales</div>
+        <nav class="nav flex-column">
+            <a href="#" class="uib-nav-link active" data-view="dashboard">
+                <i class="bi bi-speedometer2"></i> Dashboard Ejecutivo
+            </a>
+            <a href="#" class="uib-nav-link" data-view="brokerage">
+                <i class="bi bi-cash-coin"></i> 1. Brokerage
+            </a>
+            <a href="#" class="uib-nav-link" data-view="legal_professional">
+                <i class="bi bi-briefcase"></i> 2. Legal & Professional
+            </a>
+            <a href="#" class="uib-nav-link" data-view="producer_costs">
+                <i class="bi bi-person-workspace"></i> 3. Producer Costs
+            </a>
+            <a href="#" class="uib-nav-link" data-view="training">
+                <i class="bi bi-mortarboard"></i> 4. Training & Seminars
+            </a>
+            <a href="#" class="uib-nav-link" data-view="travel">
+                <i class="bi bi-airplane"></i> 5. Travel & Entertaining
+            </a>
+            <a href="#" class="uib-nav-link border-top mt-2 pt-3 text-primary fw-bold" data-view="consolidated" id="navLinkConsolidated">
+                <i class="bi bi-check2-circle fs-5"></i> Consolidado Corporativo
+            </a>
+        </nav>
+
+        <div class="px-3 mt-4 pt-3 border-top">
+            <button id="btnExportExcel" class="btn btn-uib-success w-100 d-flex align-items-center justify-content-center gap-2 mb-2">
+                <i class="bi bi-file-earmark-excel-fill"></i> <span id="lblExportExcel">Exportar Excel</span>
+            </button>
+            <button id="btnSaveDraft" class="btn btn-outline-secondary w-100 btn-sm d-flex align-items-center justify-content-center gap-2 mb-2">
+                <i class="bi bi-floppy"></i> Guardar Borrador
+            </button>
+            <button id="btnReset" class="btn btn-outline-danger w-100 btn-sm d-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-arrow-counterclockwise"></i> Reiniciar
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content Container -->
+    <main class="uib-main-content">
+
+        <!-- ========================================== -->
+        <!-- VIEW 1: DASHBOARD EJECUTIVO -->
+        <!-- ========================================== -->
+        <div id="viewDashboard" class="app-view">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <div>
+                    <h2 class="h4 font-weight-bold mb-1 text-dark" id="dashTitleArea">Dashboard Ejecutivo - Agrícola</h2>
+                    <p class="text-muted mb-0">Consolidado general de ingresos por brokerage, negocio nuevo y gastos operativos 2027.</p>
+                </div>
+                <span class="badge bg-primary px-3 py-2 fs-6" id="badgeRoleAccess">Acceso: Administrador</span>
+            </div>
+
+            <!-- KPI Cards -->
+            <div class="row g-3 mb-4">
+                <div class="col-12 col-sm-6 col-xl-2-4">
+                    <div class="kpi-card kpi-primary">
+                        <div class="kpi-title">Presupuesto Brokerage</div>
+                        <div class="kpi-value" id="kpiDashTotalBudget">$ 0</div>
+                        <i class="bi bi-bank kpi-icon"></i>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6 col-xl-2-4">
+                    <div class="kpi-card kpi-secondary">
+                        <div class="kpi-title">Total Renovaciones</div>
+                        <div class="kpi-value" id="kpiDashRenovations">$ 0</div>
+                        <i class="bi bi-arrow-repeat kpi-icon"></i>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6 col-xl-2-4">
+                    <div class="kpi-card kpi-success">
+                        <div class="kpi-title">Total Negocio Nuevo</div>
+                        <div class="kpi-value text-success" id="kpiDashNewBusiness">$ 0</div>
+                        <i class="bi bi-graph-up-arrow kpi-icon"></i>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6 col-xl-2-4">
+                    <div class="kpi-card kpi-warning">
+                        <div class="kpi-title">Total Gastos Operativos</div>
+                        <div class="kpi-value text-danger" id="kpiDashTotalExpenses">$ 0</div>
+                        <i class="bi bi-wallet2 kpi-icon"></i>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6 col-xl-2-4">
+                    <div class="kpi-card kpi-primary">
+                        <div class="kpi-title">Presupuesto Neto Area</div>
+                        <div class="kpi-value" id="kpiDashCompliance">$ 0</div>
+                        <i class="bi bi-calculator kpi-icon"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="row g-4 mb-4">
+                <div class="col-12 col-lg-4">
+                    <div class="chart-card h-100">
+                        <h3 class="h6 font-weight-bold mb-3"><i class="bi bi-pie-chart text-primary me-2"></i>Composición de Ingresos 2027</h3>
+                        <div style="height: 280px; position: relative;">
+                            <canvas id="chartDashComposition"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-8">
+                    <div class="chart-card h-100">
+                        <h3 class="h6 font-weight-bold mb-3"><i class="bi bi-bar-chart-steps text-primary me-2"></i>Tendencia Mensual Renovación vs Negocio Nuevo</h3>
+                        <div style="height: 280px; position: relative;">
+                            <canvas id="chartDashTrend"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-12">
+                    <div class="chart-card">
+                        <h3 class="h6 font-weight-bold mb-3"><i class="bi bi-diagram-2 text-primary me-2"></i>Participación Presupuestal por Módulo</h3>
+                        <div style="height: 250px; position: relative;">
+                            <canvas id="chartDashModules"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VIEW 2: MÓDULO BROKERAGE -->
+        <!-- ========================================== -->
+        <div id="viewBrokerageModule" class="app-view d-none">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                    <h2 class="h4 font-weight-bold mb-1 text-dark" id="brokerageTitleArea">Brokerage - Agrícola</h2>
+                    <p class="text-muted mb-0"><b>Total Brokerage = Renovación (Automática) + Negocio Nuevo (Editable)</b>. El incremento sugerido (5%) es de referencia y permite edición libre.</p>
+                </div>
+            </div>
+
+            <!-- Brokerage KPIs -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Total Renovación</div>
+                        <div class="h6 font-weight-bold mb-0 mt-1" id="kpiBrokRenovation">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Total Negocio Nuevo</div>
+                        <div class="h6 font-weight-bold text-success mb-0 mt-1" id="kpiBrokNewBusiness">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Total Presupuesto Brokerage</div>
+                        <div class="h5 font-weight-bold text-primary mb-0 mt-1" id="kpiBrokTotal">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Promedio Mensual</div>
+                        <div class="h6 font-weight-bold text-dark mb-0 mt-1" id="kpiBrokMonthlyAvg">$ 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brokerage Worktable -->
+            <div class="pbi-card-table">
+                <div class="table-responsive">
+                    <table class="table pbi-table align-middle">
+                        <thead>
+                            <tr>
+                                <th style="width: 10%;">Mes</th>
+                                <th style="width: 20%;" class="text-end">Renovación 2026 ($)</th>
+                                <th style="width: 15%;" class="text-end">Sugerido (5%)</th>
+                                <th style="width: 20%;" class="text-end">Negocio Nuevo 2027 ($)</th>
+                                <th style="width: 20%;" class="text-end">Total Brokerage ($)</th>
+                                <th style="width: 15%;" class="text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="brokerageTableBody">
+                            <!-- Generated via JS -->
+                        </tbody>
+                        <tfoot id="brokerageTableFoot">
+                            <!-- Generated via JS -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VIEW 3: OTROS CRITERIOS PRESUPUESTALES (GASTOS) -->
+        <!-- ========================================== -->
+        <div id="viewExpensesModule" class="app-view d-none">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                    <h2 class="h4 font-weight-bold mb-1 text-dark" id="expenseTitleModule">Gastos Operativos</h2>
+                    <p class="text-muted mb-0">Estructura de Gastos: <b>Valor Ejecutado 2026 | Presupuesto 2027 | Variación $ | Variación % | Justificación</b>.</p>
+                </div>
+            </div>
+
+            <!-- Expense Module KPIs -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Ejecutado 2026</div>
+                        <div class="h6 font-weight-bold mb-0 mt-1" id="kpiExpExecuted">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Presupuesto 2027</div>
+                        <div class="h5 font-weight-bold text-primary mb-0 mt-1" id="kpiExpBudget">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Variación $</div>
+                        <div class="h6 font-weight-bold mb-0 mt-1" id="kpiExpVarAmount">$ 0</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card p-2 text-center">
+                        <div class="kpi-title">Variación %</div>
+                        <div class="h6 font-weight-bold mb-0 mt-1" id="kpiExpVarPct">0.0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Expense Worktable -->
+            <div class="pbi-card-table">
+                <div class="table-responsive">
+                    <table class="table pbi-table align-middle">
+                        <thead>
+                            <tr>
+                                <th style="width: 12%;">Mes</th>
+                                <th style="width: 20%;" class="text-end">Valor Ejecutado 2026 ($)</th>
+                                <th style="width: 22%;" class="text-end">Presupuesto 2027 ($)</th>
+                                <th style="width: 18%;" class="text-end">Variación $</th>
+                                <th style="width: 12%;" class="text-center">Variación %</th>
+                                <th style="width: 16%;">Justificación</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expenseTableBody">
+                            <!-- Generated via JS -->
+                        </tbody>
+                        <tfoot id="expenseTableFoot">
+                            <!-- Generated via JS -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VIEW 4: CONSOLIDADO CORPORATIVO / ADMINISTRADOR -->
+        <!-- ========================================== -->
+        <div id="viewConsolidated" class="app-view d-none">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <div>
+                    <h2 class="h4 font-weight-bold mb-1 text-dark">Vista Administrador - Consolidado Corporativo 2027</h2>
+                    <p class="text-muted mb-0">Consolidación completa de las 9 áreas de negocio y resumen por criterios presupuestales.</p>
+                </div>
+                <button class="btn btn-uib-success" id="btnExportConsolidatedExcel">
+                    <i class="bi bi-file-earmark-excel-fill me-1"></i> Exportar Presupuesto Consolidado 2027 (Excel)
+                </button>
+            </div>
+
+            <!-- Corporate Overview Table -->
+            <div class="pbi-card-table mb-4">
+                <div class="p-3 bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-table me-2"></i>RESUMEN CONSOLIDADO POR ÁREA Y CRITERIO PRESUPUESTAL</span>
+                    <span class="badge bg-light text-dark fs-6" id="badgeCorpAreasCount">9 Áreas Registradas</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table pbi-table align-middle table-hover">
+                        <thead>
+                            <tr>
+                                <th>Área / Línea de Negocio</th>
+                                <th class="text-end">Total Brokerage</th>
+                                <th class="text-end">Legal & Professional</th>
+                                <th class="text-end">Producer Costs</th>
+                                <th class="text-end">Training</th>
+                                <th class="text-end">Travel</th>
+                                <th class="text-end table-primary fw-bold">Total General 2027</th>
+                            </tr>
+                        </thead>
+                        <tbody id="consolidatedTableBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                        <tfoot id="consolidatedTableFoot">
+                            <!-- Populated via JS -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal: Detalle de Renovaciones por Mes -->
+    <div class="modal fade" id="modalRenewalsDetail" tabindex="-1" aria-labelledby="modalRenewalsLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title" id="modalRenewalsLabel"><i class="bi bi-list-check me-2"></i>Detalle de Renovaciones Pólizas</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Pólizas maestras con fecha de vencimiento que conforman la renovación del mes:</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Asegurado</th>
+                                    <th>Producto / Ramo</th>
+                                    <th class="text-end">Prima ($)</th>
+                                    <th class="text-end">Comisión UIB ($)</th>
+                                    <th class="text-center">Fecha Fin</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalRenewalsTableBody">
+                                <!-- Dynamic content -->
+                            </tbody>
+                            <tfoot class="table-group-divider font-weight-bold">
+                                <tr>
+                                    <td colspan="3" class="text-uppercase">Total Renovaciones Mes</td>
+                                    <td class="text-end font-monospace text-primary fs-6" id="modalRenewalsTotal">$ 0</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
+        <div id="uibToast" class="toast align-items-center text-white bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body fs-6" id="toastMessage">Operación exitosa</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+
+    <!-- Application Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/excel.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
